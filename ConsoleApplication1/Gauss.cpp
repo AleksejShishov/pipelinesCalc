@@ -9,13 +9,11 @@ const double Pi{ 3.14159 };
 const double ReCr{ 2400 };
 
 //физическая модель жидкости
-class Liquid
+struct Liquid
 {
-public:
     double nu{ 1.004e-6 };  //кинематическая вязкость воды при 293 К
     double rho{ 1000 };     // Плотность жидкости в трубе
  };
-
 //гидравлическая модель трубопровода
 struct Pipe
 {
@@ -30,7 +28,7 @@ struct Pipe
 
 public:
     double kTurb = ksi * lam / water.rho;       //функция проводимости - гидр. сопротивления для турбулентного режима
-    double k = ksi * lam * water.nu * reLam;    //функция проводимости - гидр. сопротивления для ламинарного режима
+    double k= ksi * lam * water.nu * reLam;    //функция проводимости - гидр. сопротивления для ламинарного режима
 };
 
 //структура для хранения сконвертированной (сжатой) разреженной матрицы
@@ -41,7 +39,8 @@ struct ConvertedMatrix
     vector<int> columns;    // индексы столбцов ненулевых элементов
 };
 
-//класс для описания гидравлической сети с функ
+
+//класс для описания гидравлической сети
 class HydraulicNet
 {
     const int pInputCount{ 4 };         //число входных трубопроводов
@@ -50,7 +49,6 @@ class HydraulicNet
     vector<vector<double>> a;
     vector<double> b;
     vector<double> pInput{0,0,0,0};           //входные значения давлений
-    ConvertedMatrix matrix;
     vector<string> calcValues { "P1", "P2", "P3", "P4", "Q01", "Q12", "Q02", "Q24", "Q04", "Q34", "Q03", "Q13" }; //подписи для результата
 
     //возвращает число не нулевых элементов в матрице а
@@ -70,6 +68,9 @@ class HydraulicNet
     }
 
 public:
+    ConvertedMatrix sparseRowA;
+    ConvertedMatrix coordinateVectorsA;
+
     //ввод начальных давлений
     void InputValues()
     {
@@ -87,9 +88,10 @@ public:
     ConvertedMatrix ConvertToSparseRow()
     {
         int numNonZeroElements = CountNonZeroElements();
-        vector<double> values (numNonZeroElements);
+        vector<double>values (numNonZeroElements);
         vector<int> columns (numNonZeroElements);
         vector<int> rowsCumulative;
+        ConvertedMatrix sparseRow;
 
         int c = 0;                              //кумулятивное число не нулевых элементов в строке
         for (int i = 0; i < N; i++)
@@ -107,12 +109,41 @@ public:
         }
         rowsCumulative.push_back(c);
 
-        matrix.columns = columns;
-        matrix.rows = rowsCumulative;
-        matrix.values = values;
-
-        return matrix;
+        sparseRow.columns = columns;
+        sparseRow.rows = rowsCumulative;
+        sparseRow.values = values;
+        return sparseRow;
     }
+
+    //конвертирует разреженную матрицу в формат 3-х векторов: значения, координаты i, координаты j
+    ConvertedMatrix ConvertToCoordinateVectors()
+    {
+        int k{}, numNonZeroElements = CountNonZeroElements();
+        vector<double>values(numNonZeroElements);
+        vector<int> columns(numNonZeroElements);
+        vector<int> rows (numNonZeroElements);
+        ConvertedMatrix coordinateVectors;
+
+        for (int i = 0; i < N; i++)
+        {
+            for (int j = 0; j < N; j++)
+            {
+                if (a[i][j] != 0)
+                {
+                    values[k] = a[i][j];
+                    rows[k] = i;
+                    columns[k] = j;
+                    k++;
+                }
+            }
+        }
+ 
+        coordinateVectors.columns = columns;
+        coordinateVectors.rows = rows;
+        coordinateVectors.values = values;
+        return coordinateVectors;
+    }
+
 
     //выводит на консоль матрицу в формате Sparse Row
     void ShowSparseRowMatrix(const ConvertedMatrix matrix)
@@ -123,13 +154,13 @@ public:
         }
         cout << endl;
 
-        cout << "Ряды: \t\t";
+        cout << "Ряды: ";
         for (int column : matrix.columns) {
             cout << column << " ";
         }
         cout << endl;
 
-        cout << "Сжатые строки: \t";
+        cout << "Строки: ";
         for (int rowsCum : matrix.rows) {
             cout << rowsCum << " ";
         }
@@ -194,24 +225,15 @@ public:
     }
 };
 
-double GetCalculationRuntime(HydraulicNet net, void (HydraulicNet::* calculation)())
-{
-    auto start = chrono::high_resolution_clock::now();                                    // запоминаем время начала выполнения функции
-
-    (net.*calculation)();
-
-    auto end = chrono::high_resolution_clock::now();
-    auto duration = chrono::duration_cast<chrono::milliseconds>(end - start);             // вычисляем время выполнения функции в миллисекундах
-    return duration.count();
-}
-
+//прототип; вычисляет время выполнения ф-ции, в качестве параметров передатся объект и его метод, время выполнения которого измеряется
+double GetCalculationRuntime(HydraulicNet, void (HydraulicNet::* calculation)());
 
 int main()
 {
     setlocale(LC_ALL, "");
 
     Pipe pipe;
-    double k{ pipe.k };                         //для системы линейных уравнений сразу вычисляем коэфф. проводимости
+    double k{ pipe.k };                         //для системы линейных уравнений сразу вычисляем коэфф. проводимости - гидравлическое сопротивление
 
     vector<vector<double>> a =
     {
@@ -229,18 +251,30 @@ int main()
         {0, 0, 0, 1, -1, 0, 0, k, 0, k, 0, 0},
     };
 
-    HydraulicNet net4Vertex(a, 4);                                                //гидравлическая сеть с 4-я узлами
+    HydraulicNet net(a, 4);                                                  //гидравлическая сеть с 4-я узлами
 
-    ConvertedMatrix aSparseRowMatrix = net4Vertex.ConvertToSparseRow();         
+    net.sparseRowA = net.ConvertToSparseRow();                               //создаем и выводим матрицу со сжатыми рядами        
+    net.ShowSparseRowMatrix(net.sparseRowA);
 
-    net4Vertex.ShowSparseRowMatrix(aSparseRowMatrix);
+    net.coordinateVectorsA = net.ConvertToCoordinateVectors();               //создаем и выводим векторы значений и координат 
+    net.ShowSparseRowMatrix(net.coordinateVectorsA);
 
-    double funcRuntime = GetCalculationRuntime(net4Vertex, &HydraulicNet::Gauss);    // выводим время выполнения функции
-    cout << "\nВремя расчетов простым Гаусом, мс: " << funcRuntime;
+    double funcRuntime = GetCalculationRuntime(net, &HydraulicNet::Gauss);   // выводим время выполнения функции
+    cout << "\nВремя расчетов простым Гаусом, мс: " << funcRuntime << endl;
 
-    funcRuntime = GetCalculationRuntime(net4Vertex, &HydraulicNet::GaussWithSparseRowMatrix);    // выводим время выполнения функции
-    cout << "\nВремя расчетов  Гаусом c матрицей SparseRow, мс: " << funcRuntime;
+    funcRuntime = GetCalculationRuntime(net, &HydraulicNet::GaussWithSparseRowMatrix);    // выводим время выполнения функции
+    cout << "\nВремя расчетов  Гаусом c матрицей SparseRow, мс: " << funcRuntime << endl;
 
-    cout << endl;
     return 0;
 } 
+
+double GetCalculationRuntime(HydraulicNet net, void (HydraulicNet::* calculation)())
+{
+    auto start = chrono::high_resolution_clock::now();                                    // запоминаем время начала выполнения функции
+
+    (net.*calculation)();
+
+    auto end = chrono::high_resolution_clock::now();
+    auto duration = chrono::duration_cast<chrono::milliseconds>(end - start);             // вычисляем время выполнения функции в миллисекундах
+    return duration.count();
+}
