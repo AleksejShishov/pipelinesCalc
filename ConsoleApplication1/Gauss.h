@@ -68,10 +68,10 @@ double f8(double p3, double Q03, double p03, double k)
     return p03 - p3 - Q03 * Q03 * k;
 }
 
-double f9 (double p3, double Q03, double p03, double k) { return p0[0] };
-double f10(double p3, double Q03, double p03, double k) { return p0[1] };
-double f11(double p3, double Q03, double p03, double k) { return p0[3] };
-double f12(double p3, double Q03, double p03, double k) { return p0[4] };
+double f9(double p0, double Q03, double p03, double k) { return p0; };
+double f10(double p0, double Q03, double p03, double k) { return p0; };
+double f11(double p0, double Q03, double p03, double k) { return p0; };
+double f12(double p0, double Q03, double p03, double k) { return p0; };
 
 //производные для системы уравнений
 double df1dp1(double Q01, double k)

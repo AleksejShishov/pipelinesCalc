@@ -11,9 +11,11 @@ using namespace std;
 const string line(100, '=');                    //строка разделитель для вывода на консоль
 const string filenameM = "matrix.txt";          //матрицу можно загрузить из файла
 const string filenameResultJSON = "result.json";//расчетные параметры сохраняются в формате JSON 
+const vector<vector<double>> ERROR = { {1.7e308}, {0} };
 
 
 vector<string> signatureX { "P1", "P2", "P3", "P4", "Q01", "Q12", "Q02", "Q24", "Q04", "Q34", "Q03", "Q13" }; //расчетные параметры, подписи
+vector<string> signatureXN { "P1", "P2", "P3", "P4", "Q12", "Q13", "Q24", "Q34", "Q01", "Q02", "Q03", "Q04" }; //расчетные параметры, подписи
 //double Q01{ 0 }, Q12{ 0 }, Q02{ 0 }, Q24{ 0 }, Q04{ 0 }, Q34{ 0 }, Q03{ 0 }, Q13{ 0 }, p1, p2, p3, p4;
 
 const int PInputCount{ 4 };                     //число входных трубопроводов, 4 по умолчанию
@@ -121,12 +123,13 @@ class HydraulicNet
 public:
     CompressedMatrix CLA;                       //Coordinate List matrix A, 3 вектора не 0 элементов: значенния, координаты ряда, столбца
     CompressedMatrix СSRA;                      //Compressed Sparse Row matrix A, , вектор координат рядов сжат
-    CompressedMatrix4V CSRAA;                   //формат 4-х векторов: значения, координаты i, координаты j, суммы элементов в строке
-    vector<Node*> KNUTHrows;                    //Связные списки по модели Кнута, +векторы входа в новый ряд и новый столбец
+    CompressedMatrix4V CSRAA;                   //формат 4-х векторов: значения, координаты i, координаты j, суммы элементов в строке, комбинация CLA и CRSA
+    vector<Node*> KNUTHrows;                    //Связные списки по модели Кнута, добавляются векторы входа в новый ряд и новый столбец
     vector<Node*> KNUTHcolumns;
 
-    vector<string> signatureX { "P1", "P2", "P3", "P4", "Q01", "Q12", "Q02", "Q24", "Q04", "Q34", "Q03", "Q13" }; //расчетные параметры, подписи
-    double Q01{ 0 }, Q12{ 0 }, Q02{ 0 }, Q24{ 0 }, Q04{ 0 }, Q34{ 0 }, Q03{ 0 }, Q13{ 0 };
+    vector<string> signatureX { "P1", "P2", "P3", "P4", "Q01", "Q12", "Q02", "Q24", "Q04", "Q34", "Q03", "Q13" }; //расчетные параметры, подписи для Гаусса
+    vector<string> signatureXN { "P1", "P2", "P3", "P4", "Q12", "Q13", "Q24", "Q34", "Q01", "Q02", "Q03", "Q04" }; //расчетные параметры, подписи для Ньютона
+ //   double Q01{ 0 }, Q12{ 0 }, Q02{ 0 }, Q24{ 0 }, Q04{ 0 }, Q34{ 0 }, Q03{ 0 }, Q13{ 0 };
 
     //
     //********************************* КОНВЕРТАЦИЯ РАЗРЕЖЕННОЙ МАТРИЦЫ *************
@@ -461,7 +464,7 @@ public:
      //считает матрицу a и вектор b по методу Гаусса    
     vector<double> GaussWithCRSAAdapted(vector<double>& b)
     {
-        vector<double> x(N, 0.0);               //собираем результат в вектор x
+        vector<double> x(N, 0.0);                                   //собираем результат в вектор x
 
         for (int i = 0; i < N; i++)
         {
@@ -601,187 +604,178 @@ public:
          return x;
      }
 
-     void Newton(const vector<double>& p0, vector<double>& x, double eps = 1e-6, int iterMax = 100, int N = 8)
+     // Функция для нахождения обратной матрицы
+     vector<vector<double>> InverseMatrix(vector<vector<double>> a)
      {
-         int iterations{ 0 };                  //ограничим число итераций: 100, но можно перегрузить в параметрах эпсилон и iter
-
-         double f1 = p0[0] - x[0] - x[4] * x[4] * k;
-         double f2 = x[0] - x[1] - x[5] * x[5] * k;
-         double f3 = x[1] - x[3] - x[7] * x[7] * k;
-         double f4 = x[0] - x[2] - x[11] * x[11] * k;
-         double f5 = x[2] - x[3] - x[9] * x[9] * k;
-         double f6 = x[3] - p0[3] - x[8] * x[8] * k;
-         double f7 = p0[1] - x[1] - x[6] * x[6] * k;
-         double f8 = p0[2] - x[2] - x[10] * x[10] * k;
-
-         double f9 = p0[0];
-         double f10 = p0[1];
-         double f11 = p0[3];
-         double f12 = p0[4];
-
-         double df1dp1 = -1;
-         double df1dQ01 = -2 * x[4] * k;
-         double df2dp2 = -1;
-         double df2dQ12 = -2 * x[5] * k;
-         double df3dp2 = 1;
-         double df3dp4 = -1;
-         double df3dQ24 = -2 * x[7] * k;
-         double df4dp1 = 1;
-         double df4dp3 = -1;
-         double df4dQ13 = -2 * x[11] * k;
-         double df5dp3 = 1;
-         double df5dp4 = -1;
-         double df5dQ34 = -2 * x[9] * k;
-         double df6dp4 = 1;
-         double df6dQ04 = -2 * x[8] * k;
-         double df7dp2 = -1;
-         double df7dQ02 = -2 * x[6] * k;
-         double df8dp3 = -1;
-         double df8dQ03 = -2 * x[10] * k;
-
-
-         //              signatureX' { "P1", "P2", "P3", "P4", "Q12", "Q13", "Q24", "Q34", "Q01", "Q02", "Q03", "Q04" }
-         //                             0    1     2     3     4      5      6       7      8     9      10    11
-         // 
-         //                           df1 / dp1  .     .     .     .      .      .       .  dp1 / dQ01  .     .     .
-         //                                 :
-         //                           df8 /..
-         vector<vector<double>> J = { {df1dp1, 0, 0, 0,       0, 0, 0, 0,      df1dQ01, 0 , 0, 0},
-                                      {0, df2dp2, 0, 0,       df2dQ12, 0, 0, 0,       0, 0, 0, 0},
-                                      {0, df3dp2, 0, df3dp4,  0, 0, df3dQ24, 0,       0, 0, 0, 0},
-                                      {df4dp1, 0, df4dp3, 0,  0, df4dQ13, 0, 0,       0, 0, 0, 0},
-                                      {0, 0, df5dp3, df5dp4,  0, 0, 0, df5dQ34,       0, 0, 0, 0},
-                                      {0, 0, 0, df6dp4,       0, 0, 0, 0,        0, 0, 0, df6dp4},
-                                      {0, df7dp2, 0, 0,       0, 0, 0, 0,       0, df7dQ02, 0, 0},
-                                      {0, 0, df8dp3, 0,       0, 0, 0, 0,       0, 0, df8dQ03, 0}
-         };
-
-         for (int z = 0; z < iterations; z++) 
-         {
-             vector<double> F(N);
-             vector<vector<double>> J(N, vector<double>(N));
-
-             for (int i = 0; i < N; i++) 
+         int N{ (int)a.size() };
+         vector<vector<double>> extended( N, vector<double>(N * 2,0.0));
+         vector<vector<double>>inverse(N, vector<double>(N,0));
+         for (int i = 0; i < N; i++)
+         {                                                  //добавляем единичную матрицу справа
+             for (int j = 0; j < N; j++)
              {
-                 F[i] = -functions[i](x[i]);
-
-                 for (int j = 0; j < N; j++) 
+                 extended[i][j] = a[i][j];
+             }
+             extended[i][i + N] = 1;
+         }
+         
+         for (int i = 0; i < N; i++)                        //приводим расширенную матрицу к диагональному виду, проверим
+         {      
+             if (extended[i][i] == 0)
+             {
+                 int j = i + 1;
+                 while (j < N && extended[j][i] == 0) 
                  {
-                     J[i][j] = diffs[i](x[j]);
+                     j++;
+                 }
+                 if (j == N) 
+                 {
+                     cout << "Матрица вырожденная, обратной матрицы не существует." << std::endl;
+                     return ERROR;
+                 }
+                 for (int k = 0; k < N * 2; k++)
+                 {
+                     swap(extended[i][k], extended[j][k]);
                  }
              }
+             
+             for (int j = 0; j < N; j++)                    //прямой ход Гаусса
+             {
+                 if (j != i)
+                 {
+                     double coef = extended[j][i] / extended[i][i];
+                     for (int k = 0; k < N * 2; k++) 
+                     {
+                         extended[j][k] -= coef * extended[i][k];
+                     }
+                 }
+             }
+
+             for (int i = 0; i < N; i++)                    //нормализуем строки расширенной матрицы, диагональ левой матрицы = 1
+             {
+                 double coef = extended[i][i];
+                 for (int j = 0; j < N * 2; j++) 
+                 {
+                     extended[i][j] /= coef;
+                 }
+             }
+
+             for (int i = 0; i < N; i++)                    //извлекаем обратную матрицу из расширенной матрицы
+             {
+                 for (int j = 0; j < N; j++) 
+                 {
+                     inverse[i][j] = extended[i][j + N];
+                 }
+             }
+         }
+         return inverse;
+     }
+
+     //считает СНАУ методом Ньютона; ограничено число итераций: 100, но можно перегрузить в параметрах эпсилон - приближение и число итераций
+     vector<double> Newton(const vector<double>& p0, vector<double>& x, double eps = 1e-6, int itMax = 100, int N = 8)
+     {
+         int iterations{ 0 };                            //ограничим число итераций: 100, но можно перегрузить в параметрах эпсилон - приближение и iter
+
+         for (int it = 0; it < itMax; it++)
+         {        
+             x[8] =  x[4] + x[5];
+             x[9] =  x[6] - x[4];
+             x[10] = x[7] - x[5];
+             x[11] = x[6] + x[7];
+
+             double f1 = p0[0] - x[0] - x[4]  * x[4]  * k;  //вычисление значений функций и их производных
+             double f2 = x[0]  - x[1] - x[5]  * x[5]  * k;
+             double f3 = x[1]  - x[3] - x[7]  * x[7]  * k;
+             double f4 = x[0]  - x[2] - x[11] * x[11] * k;
+             double f5 = x[2]  - x[3] - x[9]  * x[9]  * k;
+             double f6 = x[3] - p0[3] - x[8]  * x[8]  * k;
+             double f7 = p0[1] - x[1] - x[6]  * x[6]  * k;
+             double f8 = p0[2] - x[2] - x[10] * x[10] * k;
+/*
+             double f9  = p0[0];                            //добавим уравнения, чтобы не менять размер матрица Якоби
+             double f10 = p0[1];
+             double f11 = p0[2];
+             double f12 = p0[3];
+*/
+             double df1dp1  = -1;                           //производные
+             double df1dQ01 = -2 * x[4] * k;
+             double df2dp2  = -1;
+             double df2dQ12 = -2 * x[5] * k;
+             double df3dp2  =  1;
+             double df3dp4  = -1;
+             double df3dQ24 = -2 * x[7] * k;
+             double df4dp1  =  1;
+             double df4dp3  = -1;
+             double df4dQ13 = -2 * x[11] * k;
+             double df5dp3  =  1;
+             double df5dp4  = -1;
+             double df5dQ34 = -2 * x[9] * k;
+             double df6dp4  =  1;
+             double df6dQ04 = -2 * x[8] * k;
+             double df7dp2  = -1;
+             double df7dQ02 = -2 * x[6] * k;
+             double df8dp3  = -1;
+             double df8dQ03 = -2 * x[10] * k;
+
+             //                                           ***     Матрица Якоби    ***
+             //signatureX' :: i :{ "P1", "P2", "P3", "P4", "Q12", "Q13", "Q24", "Q34", "Q01", "Q02", "Q03", "Q04" }
+             //                       0    1     2     3     4      5      6       7      8     9      10    11             // 
+             //            :: j  :{f1 ..f12}
+             // 
+             
+             vector<vector<double>> jm= 
+             { 
+                                          {df1dp1, 0, 0, 0,       0, 0, 0, 0},
+                                          {0, df2dp2, 0, 0,       df2dQ12, 0, 0, 0},
+                                          {0, df3dp2, 0, df3dp4,  0, 0, df3dQ24, 0},
+                                          {df4dp1, 0, df4dp3, 0,  0, df4dQ13, 0, 0},
+                                          {0, 0, df5dp3, df5dp4,  0, 0, 0, df5dQ34},
+                                          {0, 0, 0, df6dp4,       0, 0, 0, 0},
+                                          {0, df7dp2, 0, 0,       0, 0, 0, 0},
+                                          {0, 0, df8dp3, 0,       0, 0, 0, 0}
+
+ /*                    {df1dp1,  0,       0,     df4dp1,  0,      0,      0,      0,  0,0,0,0},  //p1
+                     { 0,    df2dp2, df3dp2,    0,       0,      0, df7dp2,      0,  0,0,0,0},
+                     { 0,       0,       0,     df4dp3, df5dp3,  0      , 0, df8dp3, 0,0,0,0},
+                     { 0,       0,   df3dp4,    0,      df5dp4, df6dp4,   0,     0 , 0,0,0,0},
+                     { 0,    df2dQ12,    0,     0,       0,      0,       0,     0,  0,0,0,0},  //Q12
+                     { 0,       0,       0,     df4dQ13, 0,      0,       0,     0 , 0 ,0 ,0 ,0  },  //Q13
+                     { 0,       0,   df3dQ24,   0,       0,      0,       0,     0  ,0,0,0,0},  //Q24
+                     { df1dQ01, 0,       0,     0,      df5dQ34, 0,       0,     0,0,0,0,0},  //Q34
+                     { 0,       0,       0,     0,       0,      0,       0,     0,0,0,0,0  },  //Q01
+                     { 0,        0 ,      0,     0,       0,      0, df7dQ02,     0 ,0,0,0,0 },
+                     { 0,       0,       0,     0,       0,       0,    0,    df8dQ03,0,0,0,0},
+                     { 0,       0 ,      0 ,    0 ,      0 ,   df6dp4,    0,     0,0,0,0,0} 
+                     */
+             };
+             vector<vector<double>>  inverseJ = InverseMatrix(jm);
+
+             vector<double> F = { -f1, -f2, -f3, -f4, -f5, -f6, -f7, -f8 };        //вектор функций
 
              vector<double> dp(N, 0);                                               //решение системы уравнений J * dp = F
 
-             for (int i = 0; i < N; i++) 
+             for (int i = 0; i < N; i++)
              {
                  for (int j = 0; j < N; j++)
                  {
-                     dp[i] += J[i][j] * F[j];
+                     dp[i] +=  inverseJ[i][j] * F[j];
                  }
              }
-             
-             for (int i = 0; i < 3; i++)                                            //обновление значений переменных
+
+             for (int i = 0; i < N; i++)                                            //обновление значений переменных
              {
-                 x[i] += dp[i];
+                 x[i] += dp[i]; cout << "\ndp " << i << " " << dp[i];
              }
 
-             
+
              if (abs(dp[0]) < eps && abs(dp[1]) < eps && abs(dp[2]) < eps)          //проверка условия окончания итераций по эпсилон
              {
-                 break;
+                break;
              }
          }         
-
-         cout << endl << line << endl << "\n\tРезультаты вычислений:\n" << endl;
-/*         cout << "p1 = " << p1 << endl;
-         cout << "p2 = " << p2 << endl;
-         cout << "p3 = " << p3 << endl;
-         cout << "p4 = " << p4 << endl;
-         cout << "Q01 = " << Q01 << endl;
-         cout << "Q02 = " << Q02 << endl;
-         cout << "Q03 = " << Q03 << endl;
-         cout << "Q04 = " << Q04 << endl;*/
+         cout << p0[0] << "p0 " << x[0] << " p1 " << x[3] << " p4 " << " q12: " << x[4] << " q01 " << x[8];
+              return x;
      }
-
-     void NewtonJakobLight(double p[], double Q[])
-     {
-         double k = 0.5; // задаем коэффициент k
-         double Q01 = Q[0]; // задаем начальные значения объемных расходов
-         double Q02 = Q[1];
-         double Q03 = Q[2];
-         double Q04 = Q[3];
-//         double Q12; Q24, 13, Q34;
-
-         // вычисляем значения объемных расходов по формулам
-         Q12 = Q24 - Q02;
-         Q24 = Q04 - Q34;
-         Q13 = Q34 - Q03;
-         Q01 = Q12 + Q13;
-
-         // вычисляем значения давлений по формулам
-         p[0] = 10.0; // задаем начальные значения давлений
-         p[1] = 8.0;
-         p[2] = 6.0;
-         p[3] = 4.0;
-
-         double eps = 1e-6; // задаем точность вычислений
-         double err = 1.0; // задаем начальное значение ошибки
-
-         while (err > eps) // пока ошибка больше точности
-         {
-             double J[4][4]; // создаем матрицу Якоби
-             J[0][0] = -1.0 - 2.0 * k * Q01 * Q01; // заполняем матрицу Якоби
-             J[0][1] = 1.0;
-             J[0][2] = 1.0;
-             J[0][3] = 0.0;
-
-             J[1][0] = 1.0;
-             J[1][1] = -1.0 - 2.0 * k * Q12 * Q12;
-             J[1][2] = 0.0;
-             J[1][3] = 1.0;
-
-             J[2][0] = 1.0;
-             J[2][1] = 0.0;
-             J[2][2] = -1.0 - 2.0 * k * Q13 * Q13;
-             J[2][3] = -1.0;
-
-             J[3][0] = 0.0;
-             J[3][1] = 0.0;
-             J[3][2] = 1.0;
-             J[3][3] = -1.0 - 2.0 * k * Q34 * Q34;
-
-             double F[4]; // создаем вектор значений функций
-             F[0] = p[0] - p[1] - p[2] + 10.0 * k * Q01 * Q01;
-             F[1] = p[1] - p[3] - 10.0 * k * Q12 * Q12;
-             F[2] = p[1] - p[2] - 10.0 * k * Q13 * Q13;
-             F[3] = p[3] - p[2] - 10.0 * k * Q34 * Q34 + 4.0 * k * Q04 * Q04;
-
-             double dp[4]; // создаем вектор изменений давлений
-             double det = J[0][0] * J[1][1] * J[2][2] * J[3][3] + J[0][0] * J[1][2] * J[2][3] * J[3][1] + J[0][0] * J[1][3] * J[2][1] * J[3][2]
-                 + J[0][1] * J[1][0] * J[2][3] * J[3][2] + J[0][1] * J[1][2] * J[2][0] * J[3][3] + J[0][1] * J[1][3] * J[2][2] * J[3][0]
-                 + J[0][2] * J[1][0] * J[2][1] * J[3][3] + J[0][2] * J[1][1] * J[2][3] * J[3][0] + J[0][2] * J[1][3] * J[2][0] * J[3][1]
-                 + J[0][3] * J[1][0] * J[2][2] * J[3][1] + J[0][3] * J[1][1] * J[2][0] * J[3][2] + J[0][3] * J[1][2] * J[2][1] * J[3][0]
-                 - J[0][0] * J[1][1] * J[2][3] * J[3][2] - J[0][0] * J[1][2] * J[2][1] * J[3][3] - J[0][0] * J[1][3] * J[2][2] * J[3][1]
-                 - J[0][1] * J[1][0] * J[2][2] * J[3][3] - J[0][1] * J[1][2] * J[2][3] * J[3][0] - J[0][1] * J[1][3] * J[2][0] * J[3][2]
-                 - J[0][2] * J[1][0] * J[2][3] * J[3][1] - J[0][2] * J[1][1] * J[2][0] * J[3][3] - J[0][2] * J[1][3] * J[2][1] * J[3][0]
-                 - J[0][3] * J[1][0] * J[2][1] * J[3][2] - J[0][3] * J[1][1] * J[2][2] * J[3][0] - J[0][3] * J[1][2] * J[2][0] * J[3][1];
-
-             dp[0] = (J[1][1] * J[2][2] * J[3][3] + J[1][2] * J[2][3] * J[3][1] + J[1][3] * J[2][1] * J[3][2] - J[1][1] * J[2][3] * J[3][2] - J[1][2] * J[2][1] * J[3][3] - J[1][3] * J[2][2] * J[3][1]) * F[0] / det;
-             dp[1] = (J[0][1] * J[2][3] * J[3][2] + J[0][2] * J[2][1] * J[3][3] + J[0][3] * J[2][2] * J[3][1] - J[0][1] * J[2][2] * J[3][3] - J[0][2] * J[2][3] * J[3][1] - J[0][3] * J[2][1] * J[3][2]) * F[1] / det;
-             dp[2] = (J[0][1] * J[1][2] * J[3][3] + J[0][2] * J[1][3] * J[3][1] + J[0][3] * J[1][1] * J[3][2] - J[0][1] * J[1][3] * J[3][2] - J[0][2] * J[1][1] * J[3][3] - J[0][3] * J[1][2] * J[3][1]) * F[2] / det;
-             dp[3] = (J[0][1] * J[1][3] * J[2][2] + J[0][2] * J[1][1] * J[2][3] + J[0][3] * J[1][2] * J[2][1] - J[0][1] * J[1][2] * J[2][3] - J[0][2] * J[1][3] * J[2][1] - J[0][3] * J[1][1] * J[2][2]) * F[3] / det;
-
-             for (int i = 0; i < 4; i++) // обновляем значения давлений
-             {
-                 p[i] -= dp[i];
-             }
-
-             err = sqrt(dp[0] * dp[0] + dp[1] * dp[1] + dp[2] * dp[2] + dp[3] * dp[3]); // вычисляем ошибку
-         }
-         cout << p[0] << " " << p[1] << " " << p[2] << " " << p[3] << " " << Q24;
-     }
-
 
     //
     //********************************* СЕРВИСНЫЕ ФУНКЦИИ ****************************
@@ -857,12 +851,28 @@ public:
     }
 
     //выводит на консоль результирующий вектор x
-    void ShowResultX(vector<double> x)                                              //собираем результат в вектор x    
+    void ShowResultX(vector<double> x, bool newton = false)                                              //собираем результат в вектор x    
     {
         cout << endl << endl;
         for (int i = 0; i < N; i++)
         {
-            cout << i + 1 << ".\t" << signatureX[i] << " = " << "\t" << x[i] << endl;
+            auto title = (newton) ? signatureXN[i] : signatureX[i];
+            cout << i + 1 << ".\t" << title << " = " << "\t" << x[i] << endl;
+        }
+    }
+
+    //функция для вывода матрицы на экран
+    void ShowSqMatrix(const vector<vector<double>> matrix)
+    {
+        int N = (int)matrix.size();
+        cout << endl;
+        for (int i = 0; i < N; i++) 
+        {
+            for (int j = 0; j < N; j++)
+            {
+                cout << "\t" << matrix[i][j] << " ";
+            }
+            cout << endl;
         }
     }
 
@@ -884,7 +894,6 @@ public:
             return (int) symbol;
         }
     }
-
 
     //ввод матрицы из файла в текстовом виде с переводом в double, по флагу printFlag выводится на экран
     vector<vector<double>> ReadMatrix(const string& filename, bool printFlag = true)
@@ -1026,20 +1035,24 @@ int main()
     double funcRuntime = GetCalculationRuntime(net, &HydraulicNet::GaussWithKnuthLists, b, &x);
     net.ShowResultX(x);
     cout << "\nВремя расчетов  Гаусом c матрицей в варианте связных списков по модели Кнута, мкс: " << funcRuntime << endl;
+    cout << line;
+
+     funcRuntime = GetCalculationRuntime(net, &HydraulicNet::GaussWithCoordinateVectors, b, &x); 
+    net.ShowResultX(x);
+    cout << "\nВремя расчетов  Гаусом c матрицей в варианте Coordinate List, мкс: " << funcRuntime << endl;
+    cout << line;
 
     funcRuntime = GetCalculationRuntime(net, &HydraulicNet::Gauss, b, &x);               // выводим время выполнения метода Гауса
     net.ShowResultX(x);
     cout << "\nВремя расчетов простым Гаусом, мкс: " << funcRuntime << endl;
+    cout << line;
 
-    funcRuntime = GetCalculationRuntime(net, &HydraulicNet::GaussWithCoordinateVectors, b, &x); 
-    net.ShowResultX(x);
-    cout << "\nВремя расчетов  Гаусом c матрицей в варианте Coordinate List, мкс: " << funcRuntime << endl;
-
-        
     net.WriteJSON(filenameResultJSON, net.signatureX, x);
     a = net.ReadMatrix(filenameM, (bool)mode);
 
-    net.Newton(pInput,x);
+    x = {100, 100 , 100 , 100 , 100, 100, 100, 100, 100, 100, 100, 100};
+    x = net.Newton(pInput,x);
+    net.ShowResultX(x, true);
 
     return 0;
 } 
