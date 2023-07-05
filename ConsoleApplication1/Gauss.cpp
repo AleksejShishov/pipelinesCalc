@@ -3,6 +3,7 @@
 #include <chrono>
 #include <fstream>
 #include <string>
+#include <iomanip>
 
 #include "gauss.h"
 
@@ -28,6 +29,57 @@ enum class Mode
 {
 	Debug = false,
 	Release = true
+};
+
+//enum задач
+enum class Task
+{
+	Gauss = 0,
+	GaussCLA,
+	GaussCSRAA,
+	GaussKnuth,
+	Newton1,
+	NewtonHardCode4,
+	MaxTask = 6
+};
+
+
+//
+// СТРУКТУРЫ ДАННЫХ ДЛЯ ХРАНЕНИЯ РАЗРЕЖЕННОЙ МАТРИЦЫ
+// 
+//enum используемых структур данных
+enum class DataType
+{
+	CLA,
+	CSRA,
+	CSRAA,
+	MATRIX,
+	KNUTHRowsList,
+	KNUTHColumnsList,
+	ALL
+};
+
+//матрица в виде 3-ёх векторов: значения, координаты (2 варианта использования: просто вектор i - CLA / вектор i сжат - CSRA)
+struct CompressedMatrix
+{
+	vector<double> values;                      //ненулевые элементы матрицы
+	vector<int> rows;                           //индексы строк ненулевых элементов
+	vector<int> columns;                        //индексы столбцов ненулевых элементов
+};
+
+//матрица в виде 4 векторов: значений, координат, суммы элементов в строке (CSR matrix + vector j)
+struct CompressedMatrix4V : CompressedMatrix
+{
+	vector<int> nextRow;                         //указатели на номер элемента - начала строки
+};
+
+//матрица в виде связных списков по схеме Кнута
+struct Node {
+	double value;
+	int column;
+	int row;
+	Node* nextInRow;
+	Node* nextInColumn;
 };
 
 //
@@ -58,41 +110,6 @@ struct Pipe
 public:
 	double kTurb = ksi * lam / water.rho;      //функция проводимости - гидр. сопротивления для турбулентного режима
 	double k = ksi * lam * water.nu * reLam;    //функция проводимости - гидр. сопротивления для ламинарного режима
-};
-
-//
-// СТРУКТУРЫ ДАННЫХ ДЛЯ ХРАНЕНИЯ РАЗРЕЖЕННОЙ МАТРИЦЫ
-// 
-enum class DataType
-{
-	CLA,
-	CSRA,
-	CSRAA,
-	KNUTHRowsList,
-	KNUTHColumnsList
-};
-
-//матрица в виде 3-ёх векторов: значения, координаты (2 варианта использования: просто вектор i - CLA / вектор i сжат - CSRA)
-struct CompressedMatrix
-{
-	vector<double> values;                      //ненулевые элементы матрицы
-	vector<int> rows;                           //индексы строк ненулевых элементов
-	vector<int> columns;                        //индексы столбцов ненулевых элементов
-};
-
-//матрица в виде 4 векторов: значений, координат, суммы элементов в строке (CSR matrix + vector j)
-struct CompressedMatrix4V : CompressedMatrix
-{
-	vector<int> nextRow;                         //указатели на номер элемента - начала строки
-};
-
-//матрица в виде связных списков по схеме Кнута
-struct Node {
-	double value;
-	int column;
-	int row;
-	Node* nextInRow;
-	Node* nextInColumn;
 };
 
 //
@@ -280,7 +297,7 @@ public:
 	//
 	//********************************* ВЫЧИСЛИТЕЛЬНЫЙ БЛОК **************************
 	// 
-	//считает матрицу a и вектор b по методу Гаусса    
+	//считает матрицу А и вектор В по методу Гаусса    
 	vector<double> Gauss(vector<double>& b)
 	{
 		vector<double> x(N, 0.0);               //собираем результат в вектор x
@@ -334,8 +351,8 @@ public:
 		return x;
 	}
 
-	//считает матрицу в виде Coordinate List и вектор b по методу Гауса 
-	vector<double> GaussWithCoordinateVectors(vector<double>& b)
+	//считает матрицу, представленную в виде Coordinate List и вектор В по методу Гауса 
+	vector<double> GaussCLA(vector<double>& b)
 	{
 		vector<double> x(N, 0.0);                              //собираем результат в вектор x
 
@@ -463,8 +480,8 @@ public:
 		return x;
 	}
 
-	//считает матрицу a и вектор b по методу Гаусса    
-	vector<double> GaussWithCRSAAdapted(vector<double>& b)
+	//считает матрицу А и вектор В по методу Гаусса, матрица a в виде списка не 0 элементов с доп. вектором: кумулятивное кол-во не 0 элементов в строке   
+	vector<double> GaussCRSAA(vector<double>& b)
 	{
 		vector<double> x(N, 0.0);                                   //собираем результат в вектор x
 
@@ -513,10 +530,11 @@ public:
 				//************** TODO
 			}
 		}
+		return x;
 	}
 
-	//считает матрицу в виде представления Кнута списков и вектор b по методу Гауса
-	vector<double> GaussWithKnuthLists(vector<double>& b)
+	//считает матрицу, представленную в варианте Кнута - списки начала строк и столбцов
+	vector<double> GaussKnuth(vector<double>& b)
 	{
 		vector<double> x(N, 0.0);
 
@@ -606,7 +624,7 @@ public:
 		return x;
 	}
 
-	// Функция для нахождения обратной матрицы
+	//функция для нахождения обратной матрицы
 	vector<vector<double>> InverseMatrix(vector<vector<double>> a)
 	{
 		int N{ (int)a.size() };
@@ -669,7 +687,7 @@ public:
 			}
 		}
 //		cout << "normalize:" << endl;
-		ShowSqMatrix(extended);
+		ShowMatrix(extended);
 		cout << endl << line << endl;
 
 		for (int i = 0; i < N; i++)                    //извлекаем обратную матрицу из расширенной матрицы
@@ -685,7 +703,7 @@ public:
 	}
 
 	//считает СНАУ методом Ньютона; ограничено число итераций: 100, но можно перегрузить в параметрах эпсилон - приближение и число итераций
-	vector<double> Newton(const vector<double>& p0, vector<double>& x, double eps = 1e-6, int itMax = 100, int N = 8)
+	vector<double> NewtonHardCode(const vector<double>& p0, vector<double>& x, double eps = 1e-6, int itMax = 100, int N = 8)
 	{
 		int iterations{ 0 };                               //ограничим число итераций: 100, но можно перегрузить в параметрах эпсилон - приближение и iter
 
@@ -817,7 +835,8 @@ public:
 	//выводит на консоль сжатую матрицу в формате векторов не 0-ых элементов
 	void ShowCompressedMatrix(const void* matrix, DataType dataType)
 	{
-		auto m = (CompressedMatrix4V*)matrix;
+		auto m = (CompressedMatrix4V*)matrix;	
+		cout << endl << "Значения:";
 		for (double value : m->values)
 		{
 			cout << value << " ";
@@ -847,7 +866,7 @@ public:
 			}
 			cout << endl;
 		}
-		cout << endl << line << endl;
+		cout << endl << line << endl<< endl;
 	}
 
 	//выводит на консоль сжатую матрицу в Кнута
@@ -861,18 +880,19 @@ public:
 			while (element)
 			{
 				cout.width(12);
-				cout << left << element->value;
+				cout << right  << setprecision(5) << element->value <<", ";
 				cout << left << "i=" << element->column;
 				cout << left << " j=" << element->row << ",  ";
 				dataType == DataType::KNUTHRowsList ? element = element->nextInRow : element = element->nextInColumn;
 			}
 		}
+		cout << endl << endl << line << endl << endl;
 	}
 
 	//выводит на консоль результирующий вектор x
 	void ShowResultX(vector<double> x, bool newton = false)                                              //собираем результат в вектор x    
 	{
-		cout << endl << endl;
+		cout << "\t\t\tРасчет давлений в узлах и объёмных расходов: \n\n";
 		for (int i = 0; i < N; i++)
 		{
 			auto title = (newton) ? signatureXN[i] : signatureX[i];
@@ -881,7 +901,7 @@ public:
 	}
 
 	//функция для вывода матрицы на экран
-	void ShowSqMatrix(const vector<vector<double>> matrix)
+	void ShowMatrix(const vector<vector<double>> matrix)
 	{
 		int N = (int)matrix.size();
 		int M = (int)matrix[0].size();
@@ -890,11 +910,11 @@ public:
 		{
 			for (int j = 0; j < M; j++)
 			{
-				cout.width(5);
-				cout << "\t" << matrix[i][j] << " ";
+				cout << setw(10) << fixed << setprecision(2) << matrix[i][j];
 			}
 			cout << endl;
 		}
+		cout << scientific;
 	}
 
 	//переводит char в double для считываемых из файла элементов матрицы
@@ -947,9 +967,9 @@ public:
 	}
 
 	//сохраняет результирующий вектор  в формате JSON в файл, ключ - название параметра
-	void WriteJSON(const string& filename, const vector<string>& title, const vector<double>& x)
+	void WriteJSON(const string& filename,  const vector<double>& x)
 	{
-		string jsonData = ConvertVectorToJson(title, x);
+		string jsonData = ConvertVectorToJson(signatureX, x);
 		ofstream outputFile(filename);
 
 		if (outputFile.is_open())
@@ -994,6 +1014,9 @@ public:
 //прототип; вычисляет время выполнения ф-ции, в качестве параметров передатся объект и его метод, время выполнения которого измеряется
 double GetCalculationRuntime(HydraulicNet, vector<double>(HydraulicNet::* calculation)(vector<double>&), vector<double>, vector<double>*);
 
+//прототип; выполняет обработку результатов расчётов
+vector<double> Run(DataType, HydraulicNet, const vector<vector<double>>, vector<double>, vector<double>, bool save = true);
+
 //
 //************************************* MAIN *******************************************
 //
@@ -1032,7 +1055,7 @@ int main()
 
 	b = { pInput[0], pInput[1], pInput[2], pInput[3], 0, 0, 0, 0, 0, 0, 0, 0 };
 	vector<double> x(N, 0.0);                                                                   //собираем результат в вектор x
-
+/*
 	cout << endl << "\tПреобразование исходной матрицы к виду Coordinate List:\n" << endl;
 	net.CLA = net.ConvertToCLA(a);
 	net.ShowCompressedMatrix(&net.CLA, DataType::CLA);
@@ -1045,7 +1068,7 @@ int main()
 	net.CSRAA = net.ConvertToCSRAAdapted(a);
 	net.ShowCompressedMatrix(&net.CSRAA, DataType::CSRAA);
 
-	cout << endl << "\tПреобразование исходной матрицы к виду Кнута:\n" << endl;
+	cout << endl << "\tПреобразование исходной матрицы к виду список Кнута:\n" << endl;
 	net.ConvertToKnuthLists(a);
 	net.ShowKnuthList(net.KNUTHrows, DataType::KNUTHRowsList);
 	net.ShowKnuthList(net.KNUTHcolumns, DataType::KNUTHColumnsList);
@@ -1069,17 +1092,74 @@ int main()
 	cout << line;
 
 	net.WriteJSON(filenameResultJSON, net.signatureX, x);
-	a = net.ReadMatrix(filenameM, (bool)mode);
+	a = net.ReadMatrix(filenameM, (bool)mode);*/
 
 	x = { 100, 200 , 300 , 400 , 500, 600, 700, 800, 900, 1000, 1100, 1200 };					//X0
-	x = net.Newton(pInput, x);
-	net.ShowResultX(x, true);
-	cout << endl << line << ERROR[1];
-	ERROR[1] = 0;																			//сброс ошибок
-	ERROR2[0][1] = 0;
-
+//	x = net.NewtonHardCode(pInput, x);
+	ERROR = { 0, 0 };																			//сброс ошибок
+	ERROR2 = { {0, 0},{0,0} };
+	Run(DataType::CLA, net, a,b,x);
+	cout << endl << line << endl << "Error: " << ERROR[1];
 	return 0;
 }
+//выполняет обработку результатов расчётов, save - флаг сохранения в JSON файл
+vector<double> Run (DataType dataType, HydraulicNet net, const vector<vector<double>> a, vector<double> b, vector<double> x,  bool save)
+{
+	vector<double> funcRuntime((int)(Task::MaxTask) - 1, 0);
+	bool runAll{ false };
+	cout << endl << " Преобразование исходной матрицы к виду ";
+	if (dataType == DataType::ALL)
+	{
+		dataType = DataType::CLA;	
+		runAll = true;																				//пробежимся по всему списку задач, CLA должна быть сверху switch
+	}
+	switch (dataType) 
+	{
+	case DataType::CLA :
+		cout << " Coordinate List, 3 вектора: \n\n";														
+		net.CLA = net.ConvertToCLA(a);
+		net.ShowCompressedMatrix(&net.CLA, DataType::CLA);
+		funcRuntime [(int)Task::GaussCLA] = GetCalculationRuntime(net, &HydraulicNet::GaussCLA, b, &x);
+		if(!runAll) 
+			break;
+
+	case DataType::CSRA :
+		cout << " CompressedSparseRow, 3 вектора, ряды - кумулятивное число не 0 элементов: \n\n";	
+		net.СSRA = net.ConvertToCSRA(a);
+		net.ShowCompressedMatrix(&net.СSRA, DataType::CSRA);
+		if (!runAll)
+			break;
+
+	case DataType::CSRAA :
+		cout << " CompressedSparseRowAdapted, 4 вектора CLA + CRSA: \n" << endl;											
+		net.CSRAA = net.ConvertToCSRAAdapted(a);
+		net.ShowCompressedMatrix(&net.CSRAA, DataType::CSRAA);
+//		funcRuntime [(int)Task::GaussCSRAA] = GetCalculationRuntime(net, &HydraulicNet::GaussCRSAA, b, &x); //выводим время выполнения метода Гауса
+		if (!runAll)
+			break;
+
+	case DataType::KNUTHRowsList :
+		cout << "список Кнута : \n" << endl;														//список начала каждой строчки, список начала каждой строки
+		net.ConvertToKnuthLists(a);
+		net.ShowKnuthList(net.KNUTHrows, DataType::KNUTHRowsList);
+		net.ShowKnuthList(net.KNUTHcolumns, DataType::KNUTHColumnsList);
+//		funcRuntime[(int)Task::GaussKnuth] = GetCalculationRuntime(net, &HydraulicNet::GaussKnuth, b, &x);
+		if (!runAll)
+			break;
+	case DataType::MATRIX :
+		funcRuntime [(int)Task::Gauss] = GetCalculationRuntime(net, &HydraulicNet::Gauss, b, &x);	//матрица без сжатия
+	
+	}
+
+	net.ShowResultX(x, true);
+
+	if (save)
+	{
+		net.WriteJSON(filenameResultJSON, x);
+	}
+
+	return b;
+};
 
 //
 //вычисляет время выполнения ф-ции, в качестве параметров передатся объект и его метод, время выполнения метода измеряется
