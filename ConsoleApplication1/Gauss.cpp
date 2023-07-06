@@ -4,6 +4,7 @@
 #include <fstream>
 #include <string>
 #include <iomanip>
+#include <stdarg.h>
 
 #include "gauss.h"
 
@@ -12,24 +13,61 @@ using namespace std;
 const string line(100, '=');                    //строка разделитель для вывода на консоль
 const string filenameM = "matrix.txt";          //матрицу можно загрузить из файла
 const string filenameResultJSON = "result.json";//расчетные параметры сохраняются в формате JSON 
-const double error = 1.7e308;
-vector<double> ERROR = { error, 0 };
+
+const double error = 1.7e308;					//флаг, что вернулась ошибка ERROR_TYPE в векторе ERRROR или ERROR 2
+vector<double> ERROR = { 0 , 0 };
 vector<vector<double>> ERROR2 = { {ERROR}, {0, 0} };
 
+enum class ERROR_TYPE							
+{
+	GAUSS = 1,
+	GAUSSCLA,
+	GAUSSCSRAA,
+	GAUSSKNUTH,
+	NEWTON1,
+	NEWTONHARDCODE,
+	INVERSE,
+	FILE,
+	Max
+};
 
-vector<string> signatureX { "P1", "P2", "P3", "P4", "Q01", "Q12", "Q02", "Q24", "Q04", "Q34", "Q03", "Q13" }; //расчетные параметры, подписи
-vector<string> signatureXN { "P1", "P2", "P3", "P4", "Q12", "Q13", "Q24", "Q34", "Q01", "Q02", "Q03", "Q04" }; //расчетные параметры, подписи
-//double Q01{ 0 }, Q12{ 0 }, Q02{ 0 }, Q24{ 0 }, Q04{ 0 }, Q34{ 0 }, Q03{ 0 }, Q13{ 0 }, p1, p2, p3, p4;
-
-const int PInputCount{ 4 };                     //число входных трубопроводов, 4 по умолчанию
-const int N{ 12 };                              //число расчетных параметров, 12 по умолчанию, передаётся в конструкторе в модель
 
 //режимы для отладки
 enum class Mode
 {
-	Debug = false,
-	Release = true
+	DEBUG = false,
+	RELEASE = true
 };
+
+const string LOGfile = "param.log";
+
+//логи
+void LOG(string comment, const int num, ...)
+{
+	ofstream outputFile(LOGfile);
+
+	if (outputFile.is_open())
+	{
+		string result{ comment };
+		va_list factor;
+		va_start(factor, num);
+		for (int i = 0;i < num; i++)
+		{
+			result += to_string(va_arg(factor, double));						// получаем значение текущего параметра типа int
+			result += " # ";
+		}
+		va_end(factor);
+
+		outputFile << result << endl;
+		outputFile.close();
+	}
+	else
+	{
+		cout << "\n\tНевозможно открыть файл для записи Log'ов: " << LOGfile << endl << line;
+		ERROR[0] = error;
+		ERROR[1] = (double)ERROR_TYPE::FILE;
+	}
+}
 
 //enum задач
 enum class Task
@@ -43,6 +81,8 @@ enum class Task
 	MaxTask = 6
 };
 
+const int PInputCount{ 4 };                     //число входных трубопроводов, 4 по умолчанию
+const int N{ 12 };                              //число расчетных параметров, 12 по умолчанию, передаётся в конструкторе в модель
 
 //
 // СТРУКТУРЫ ДАННЫХ ДЛЯ ХРАНЕНИЯ РАЗРЕЖЕННОЙ МАТРИЦЫ
@@ -73,7 +113,7 @@ struct CompressedMatrix4V : CompressedMatrix
 	vector<int> nextRow;                         //указатели на номер элемента - начала строки
 };
 
-//матрица в виде связных списков по схеме Кнута
+//матрица в виде связных списков по схеме Кнута, Node - элемент списка
 struct Node {
 	double value;
 	int column;
@@ -146,20 +186,48 @@ public:
 	vector<Node*> KNUTHrows;                    //Связные списки по модели Кнута, добавляются векторы входа в новый ряд и новый столбец
 	vector<Node*> KNUTHcolumns;
 
-	vector<string> signatureX { "P1", "P2", "P3", "P4", "Q01", "Q12", "Q02", "Q24", "Q04", "Q34", "Q03", "Q13" }; //расчетные параметры, подписи для Гаусса
 	vector<string> signatureXN { "P1", "P2", "P3", "P4", "Q12", "Q13", "Q24", "Q34", "Q01", "Q02", "Q03", "Q04" }; //расчетные параметры, подписи для Ньютона
-	//   double Q01{ 0 }, Q12{ 0 }, Q02{ 0 }, Q24{ 0 }, Q04{ 0 }, Q34{ 0 }, Q03{ 0 }, Q13{ 0 };
 
-	   //
-	   //********************************* КОНВЕРТАЦИЯ РАЗРЕЖЕННОЙ МАТРИЦЫ *************
-	   //
-	   //конвертирует разреженную матрицу в формат 3-х векторов: значения, координаты i, координаты j
+	//
+	//********************************* КОНВЕРТАЦИЯ РАЗРЕЖЕННОЙ МАТРИЦЫ *************
+	//
+	//
+	void ConvetrtToVector(vector<vector<double>> matrix, vector<double>& values, vector<int>& rows, vector<int>& columns, vector<int>& nextRow)
+	{
+		values.resize(numNonZero);
+		rows.resize(numNonZero);
+		columns.resize(numNonZero);
+		nextRow.resize(N + 1);
+		int c = 0;                              //кумулятивное число не нулевых элементов в строке
+		nextRow.push_back(c);
+		for (int i = 0; i < N; i++)
+		{
+			for (int j = 0; j < N; j++)
+			{
+				if (matrix[i][j] != 0)
+				{
+					values.push_back(matrix[i][j]);
+					columns.push_back(j);
+					c++;
+				}
+			}
+			nextRow.push_back(c);
+		}	
+		for (double c : values)
+		cout << "   " << c;
+	}
+
+	//конвертирует разреженную матрицу в формат 3-х векторов: значения, координаты i, координаты j
 	CompressedMatrix ConvertToCLA(const vector<vector<double>>& matrix)
 	{
-		vector<double>values;
+ 		vector<double> values;
 		vector<int> columns;
 		vector<int> rows;
-		CompressedMatrix coordinateVectors;
+		CompressedMatrix CLAVectors;
+		vector<int> none;
+
+//		ConvetrtToVector(matrix, CLA.values,  CLA.rows, CLA.columns, none);
+		
 
 		for (int i = 0; i < N; i++)
 		{
@@ -174,10 +242,10 @@ public:
 			}
 		}
 
-		coordinateVectors.columns = columns;
-		coordinateVectors.rows = rows;
-		coordinateVectors.values = values;
-		return coordinateVectors;
+		CLAVectors.columns = columns;
+		CLAVectors.rows = rows;
+		CLAVectors.values = values;
+		return CLAVectors;
 	}
 
 	//конвертирует разреженную матрицу в формат Sparse Row
@@ -374,6 +442,7 @@ public:
 
 			if (mainElem == 0.0)                                //нулевой столбец
 			{
+				cout << "\n!\n";
 				continue;
 			}
 
@@ -394,9 +463,11 @@ public:
 				double temp{ b[i] };                            //меняем местами вектор свободных членов                                
 				b[i] = b[mainRow];
 				b[mainRow] = temp;
+				cout << endl << " change i to moain: " << i << " " << mainRow;
+				mainRow = i;
 			}
 
-			bool zeroAtCurrentRow;                              //признак, что в строке есть 0 элемент, который после вычитания строе !=0
+			bool zeroAtCurrentRow;                              //признак, что в строке есть 0 элемент, который после вычитания строк !=0
 			vector<double> newElements;                         //элементы, которые  перестают быть 0 после вычитания строк
 			vector<int> newElColumns;                           //номер столбца таких элементов
 
@@ -409,7 +480,7 @@ public:
 					for (int l = mainIndex; CLA.rows[l] == mainRow; l++)             //строка mainRow с текущим главным элементом
 					{
 						zeroAtCurrentRow = true;
-						if (CLA.rows[l] == i && CLA.columns[l] > i)
+						if (CLA.rows[l] == i && CLA.columns[l] >= i)
 						{
 							for (int k = j; CLA.rows[k] == currentRow; k++)          //строка workRow для обнуления и вычитания
 							{
@@ -437,7 +508,7 @@ public:
 
 					b[currentRow] -= coef * b[i];
 
-					CLA.values.erase(CLA.values.begin() + j);                       //не обнуляем нижние элементы, а удаляем из списка
+					CLA.values.erase(CLA.values.begin() + j);                        //не обнуляем нижние элементы, а удаляем из списка
 					CLA.rows.erase(CLA.rows.begin() + j);
 					CLA.columns.erase(CLA.columns.begin() + j);
 					--numNonZero;
@@ -483,131 +554,70 @@ public:
 	//считает матрицу А и вектор В по методу Гаусса, матрица a в виде списка не 0 элементов с доп. вектором: кумулятивное кол-во не 0 элементов в строке   
 	vector<double> GaussCRSAA(vector<double>& b)
 	{
-		vector<double> x(N, 0.0);                                   //собираем результат в вектор x
-
-		for (int i = 0; i < N; i++)
-		{
-			int mainRow{ i };
-			double mainElem{ 0.0 };
-			int diagonal{ 0 };
-			for (int j = CSRAA.nextRow[i]; j < numNonZero; j++)     //находим максимальный элемент в столбце i, алгоритм с главным элементом
-			{
-				if (CSRAA.columns[j] == i)
-					if (abs(CSRAA.values[j]) > abs(mainElem))
-					{
-						mainRow = j;
-						mainElem = CSRAA.values[j];
-						if (CLA.rows[j] == i)
-						{
-							diagonal = j;
-						}
-					}
-			}
-			if (mainElem == 0.0)                                    //нулевой столбец
-			{
-				continue;
-			}
-
-			if (mainRow != i)
-			{
-				for (int j = diagonal; j < numNonZero;j++)          //меняем местами текущую строку и строку с максимальным элементом
-				{
-					if (CSRAA.rows[j] == i)
-					{
-						CSRAA.rows[j] = mainRow;
-						CSRAA.nextRow[i] = CSRAA.nextRow[i];
-						continue;
-					}
-					if (CSRAA.rows[j] == mainRow)
-					{
-						CSRAA.rows[j] = i;
-					}
-				}
-				double temp{ b[i] };                                //меняем местами вектор свободных членов                                
-				b[i] = b[mainRow];
-				b[mainRow] = temp;
-
-				//************** TODO
-			}
-		}
-		return x;
+		ERROR[0] = error;
+		ERROR[1] = (double)ERROR_TYPE::GAUSSCSRAA;
+		return ERROR;
 	}
 
 	//считает матрицу, представленную в варианте Кнута - списки начала строк и столбцов
 	vector<double> GaussKnuth(vector<double>& b)
-	{
+	{/*
 		vector<double> x(N, 0.0);
 
 		for (int i = 0; i < N; i++)
 		{
-			double mainElementValue{ 0.0 };
-			Node* mainElem = nullptr;
-
-			for (Node* element = KNUTHcolumns[i]; element->nextInColumn != nullptr; element = element->nextInColumn)
+			for (Node* pivot = KNUTHrows[i]->nextInColumn; pivot != nullptr; pivot = pivot->nextInColumn)
 			{
-				if (abs(element->value) > mainElementValue && element->row >= i)
+				double coef = pivot->value / KNUTHrows[i]->value;
+				for (Node* element = KNUTHrows[i]; element != nullptr; element = element->nextInRow)
 				{
-					mainElementValue = abs(element->value);
-					mainElem = element;
+					bool zeroCurrentRow = true;
+					for (Node* colElement = pivot; colElement != nullptr; colElement = colElement->nextInRow)
+					{
+						if (colElement->row == element->row)
+						{
+							colElement->value -= coef * element->value;
+							zeroCurrentRow = false;
+							break;
+						}
+					}
+					
+					if (zeroCurrentRow)
+					{
+						Node* newElement = new Node{ -coef * element->value, element->column, pivot->row, nullptr, nullptr };
+						Node* currentElement = KNUTHrows[pivot->row];
+
+						while (currentElement->nextInRow != nullptr && currentElement->nextInRow->column < newElement->column)
+						{
+							currentElement = currentElement->nextInRow;
+						}
+
+						newElement->nextInRow = currentElement->nextInRow;
+						currentElement->nextInRow = newElement;
+
+						currentElement = KNUTHcolumns[pivot->column];
+
+						while (currentElement->nextInColumn != nullptr && currentElement->nextInColumn->row < newElement->row)
+
+						{
+							currentElement = currentElement->nextInColumn;
+						}
+
+						newElement->nextInColumn = currentElement->nextInColumn;
+						currentElement->nextInColumn = newElement;
+					}
 				}
+				b[pivot->row] -= b[i] * coef;
+				pivot->value = 0;
 			}
-
-
-			/*             if (mainElem->row != KNUTHrows[i]->row)                   //****** TODO
-						 {
-							 swap(KNUTHrows[i], KNUTHrows[mainElem->row]);
-
-							 for (Node* element = KNUTHrows[i]; element != nullptr; element = element->nextInRow)
-							 {
-								 swap(element->column, mainElem->column);
-							 }
-						 }*/
-						 /*
-									  for (Node* element = KNUTHrows[i]->nextInRow; element != nullptr; element = element->nextInRow)
-									  {
-										  double coef = element->value / KNUTHrows[i]->value;
-
-										  for (Node* pivot = KNUTHrows[i]->nextInColumn; pivot != nullptr; pivot = pivot->nextInColumn)
-										  {
-											  bool found = false;
-
-											  for (Node* colElement = pivot; colElement->nextInRow != nullptr; colElement = colElement->nextInRow)
-											  {
-												  if (colElement->row == element->row)
-												  {
-													  colElement->value -= coef * pivot->value;
-													  found = true;
-													  break;
-												  }
-											  }
-
-											  if (!found)
-											  {
-												  Node* newElement = new Node{ -coef * pivot->value, element->row, pivot->column, nullptr, nullptr };
-												  Node* currentElement = KNUTHrows[element->row];
-
-												  while (currentElement->nextInRow != nullptr && currentElement->nextInRow->column < newElement->column)
-												  {
-													  currentElement = currentElement->nextInRow;
-												  }
-
-												  newElement->nextInRow = currentElement->nextInRow;
-												  currentElement->nextInRow = newElement;
-
-												  currentElement = KNUTHcolumns[pivot->column];
-
-												  while (currentElement->nextInColumn != nullptr && currentElement->nextInColumn->row < newElement->row)
-
-												  {
-													  currentElement = currentElement->nextInColumn;
-												  }
-
-												  newElement->nextInColumn = currentElement->nextInColumn;
-												  currentElement->nextInColumn = newElement;
-											  }
-										  }
-									  }*/
-		}
+			
+			for (int j = i + 1; j < N; i++)
+			{
+				KNUTHrows[j] = KNUTHrows[j]->nextInRow;
+			}
+			KNUTHrows[i]->nextInColumn = nullptr;
+		}					  
+		
 
 		for (int i = N - 1; i >= 0; i--)                 //обратный ход, готов
 		{
@@ -621,7 +631,19 @@ public:
 			}
 			x[i] = (b[i] - sum) / KNUTHrows[i]->value;
 		}
-		return x;
+		for (int i = 0; i < N; i++) 
+		{
+			for (int j = 0; j <N; j++)
+			for (Node* e = KNUTHrows[i]; e != nullptr; e = e->nextInRow)
+			{	
+				(j == e->column) ? cout << "\t" << e->value : cout << 0;
+			}
+			cout << endl;
+		}
+		*/
+		ERROR[0] = error;
+		ERROR[1] = (double)ERROR_TYPE::GAUSSKNUTH;
+		return ERROR;
 	}
 
 	//функция для нахождения обратной матрицы
@@ -631,16 +653,15 @@ public:
 		vector<vector<double>> extended(N, vector<double>(N * 2, 0.0));
 		vector<vector<double>>inverse(N, vector<double>(N, 0));
 		for (int i = 0; i < N; i++)
-		{                                                  //добавляем единичную матрицу справа
+		{													  //добавляем единичную матрицу справа
 			for (int j = 0; j < N; j++)
 			{
 				extended[i][j] = a[i][j];
 			}
 			extended[i][i + N] = 1;
 		}
-//		ShowSqMatrix(extended);
 
-		for (int i = 0; i < N; i++)                        //приводим расширенную матрицу к диагональному виду, проверим сводимость
+		for (int i = 0; i < N; i++)						      //приводим расширенную матрицу к диагональному виду, проверим сводимость
 		{
 			if (extended[i][i] == 0)
 			{
@@ -652,16 +673,13 @@ public:
 				if (j == N)
 				{
 					cout << "Матрица вырожденная, обратной матрицы не существует." << std::endl;
-					ERROR2[0][1] = -4;                     //код ошибки: нули в столбце
+					ERROR2[0][0] = error;
+					ERROR2[0][1] = (double)ERROR_TYPE::INVERSE;                     
 					return ERROR2;
 				}
 				swap(extended[i], extended[j]);
 			}
 		
-	//	cout << "now non 0 on diagonal: i " <<i<< endl;
-//		ShowSqMatrix(extended);
-//		for (int i = 0; i < N;i++)
-	//	{
 			for (int j = i + 1; j < N; j++)                    //прямой ход Гаусса
 			{
 				if (extended[j][i] != 0)
@@ -675,10 +693,8 @@ public:
                 }		
 			}
 		}
-//		cout << "now diagonal:" << endl;
-	//	ShowSqMatrix(extended);
 
-		for (int i = 0; i < N; i++)                    //нормализуем строки расширенной матрицы, диагональ левой матрицы = 1
+		for (int i = 0; i < N; i++)								 //нормализуем строки расширенной матрицы, диагональ левой матрицы = 1
 		{
 			double coef = extended[i][i];
 			for (int j = i; j < N * 2; j++)
@@ -686,35 +702,62 @@ public:
 				extended[i][j] /= coef;
 			}
 		}
-//		cout << "normalize:" << endl;
-		ShowMatrix(extended);
-		cout << endl << line << endl;
 
-		for (int i = 0; i < N; i++)                    //извлекаем обратную матрицу из расширенной матрицы
+		for (int i = 0; i < N; i++)								 //извлекаем обратную матрицу из расширенной матрицы
 		{
 			for (int j = 0; j < N; j++)
 			{
 				inverse[i][j] = extended[i][j + N];
 			}
 		}
-	//	ShowSqMatrix(inverse);
 
 		return inverse;
 	}
 
+	//для произвольной функции можно использовать численный метод deltaY / deltaX
+	double GetDiff(double (*equation)(double), double x, double dp = 1.0e-6)
+	{
+		double derivative = (equation(x + dp) - equation(x - dp)) / (2 * dp);
+		return derivative;
+	}
+	double GetDifff(double (*equation)(double), double x, double dp = 1.0e-6)
+	{
+		return 2*x + 1;
+	}
+
+
+	//считает Ньютоном одно уравнение
+	double Newton(double (*equation)(double), double x, double epsilon = 1e-06, int it = 100)
+	{
+		for (int i = 0; i < it; i++) 
+		{
+			double f = equation(x);
+			double df = GetDiff(equation, x, epsilon);
+			double dx = f / df;
+			x = x - dx;
+			LOG("шаг итерации Ньютона1",1,dx);
+			if (abs(f) < epsilon)
+			{
+				return x;
+			}
+		}
+		return x;
+	}
+
+	//TODO            typedef double (*FunctionArr[])(double);
 	//считает СНАУ методом Ньютона; ограничено число итераций: 100, но можно перегрузить в параметрах эпсилон - приближение и число итераций
 	vector<double> NewtonHardCode(const vector<double>& p0, vector<double>& x, double eps = 1e-6, int itMax = 100, int N = 8)
 	{
-		int iterations{ 0 };                               //ограничим число итераций: 100, но можно перегрузить в параметрах эпсилон - приближение и iter
+		int iterations{ 0 };						             //ограничим число итераций: 100, но можно перегрузить в параметрах эпсилон - приближение и iter
 
 		for (int it = 0; it < itMax; it++)
-		{                                                  //УРАВНЕНИЯ В Gauss.h
+		{													     //УРАВНЕНИЯ В виде функций в Gauss.h
 			x[8] = x[4] + x[5];
 			x[9] = x[6] - x[4];
 			x[10] = x[7] - x[5];
 			x[11] = x[6] + x[7];
 
-			double f1 = p0[0] - x[0] - x[4] * x[4] * k;  //вычисление значений функций и их производных
+			double f1 = p0[0] - x[0] - x[4] * x[4] * k;			 //вычисление значений функций и их производных
 			double f2 = x[0] - x[1] - x[5] * x[5] * k;
 			double f3 = x[1] - x[3] - x[7] * x[7] * k;
 			double f4 = x[0] - x[2] - x[11] * x[11] * k;
@@ -723,12 +766,12 @@ public:
 			double f7 = p0[1] - x[1] - x[6] * x[6] * k;
 			double f8 = p0[2] - x[2] - x[10] * x[10] * k;
 			/*
-						 double f9  = p0[0];                            //добавим уравнения, чтобы не менять размер матрица Якоби
+						 double f9  = p0[0];                     //добавим уравнения, чтобы не менять размер матрица Якоби
 						 double f10 = p0[1];
 						 double f11 = p0[2];
 						 double f12 = p0[3];
 			*/
-			double df1dp1 = -1;                           //производные
+			double df1dp1 = -1;									 //производные
 			double df1dQ01 = -2 * x[4] * k;
 			double df2dp2 = -1;
 			double df2dQ12 = -2 * x[5] * k;
@@ -765,25 +808,13 @@ public:
 										 {0,        df7dp2,       0,        0,       0,       0,     0,        0},
 										 {0,            0,     df8dp3,      0,       0,       0,     0,        0}
 
-										 /*                    {df1dp1,  0,       0,     df4dp1,  0,      0,      0,      0,  0,0,0,0},  //p1
-															 { 0,    df2dp2, df3dp2,    0,       0,      0, df7dp2,      0,  0,0,0,0},
-															 { 0,       0,       0,     df4dp3, df5dp3,  0      , 0, df8dp3, 0,0,0,0},
-															 { 0,       0,   df3dp4,    0,      df5dp4, df6dp4,   0,     0 , 0,0,0,0},
-															 { 0,    df2dQ12,    0,     0,       0,      0,       0,     0,  0,0,0,0},  //Q12
-															 { 0,       0,       0,     df4dQ13, 0,      0,       0,     0 , 0 ,0 ,0 ,0  },  //Q13
-															 { 0,       0,   df3dQ24,   0,       0,      0,       0,     0  ,0,0,0,0},  //Q24
-															 { df1dQ01, 0,       0,     0,      df5dQ34, 0,       0,     0,0,0,0,0},  //Q34
-															 { 0,       0,       0,     0,       0,      0,       0,     0,0,0,0,0  },  //Q01
-															 { 0,        0 ,      0,     0,       0,      0, df7dQ02,     0 ,0,0,0,0 },
-															 { 0,       0,       0,     0,       0,       0,    0,    df8dQ03,0,0,0,0},
-															 { 0,       0 ,      0 ,    0 ,      0 ,   df6dp4,    0,     0,0,0,0,0}
-															 */
 			};
 			vector<vector<double>>  inverseJ = InverseMatrix(jm);
 
 			if (inverseJ[0][0] == error)
 			{
-				ERROR[1] = inverseJ[0][1];                                         //код ошибки Гаусса для Ньтона зашит в результирующем векторе
+				ERROR[0] = error;
+				ERROR[1] = (double)ERROR_TYPE::INVERSE;                            //код ошибки Гаусса для Ньтона зашит в результирующем векторе
 				return ERROR;
 			}
 
@@ -801,16 +832,15 @@ public:
 
 			for (int i = 0; i < N; i++)                                            //обновление значений переменных
 			{
-				x[i] += dp[i]; cout << "\ndp " << i << " " << dp[i];
+				x[i] += dp[i]; 
 			}
 
-
+	//		for ()
 			if (abs(dp[0]) < eps && abs(dp[1]) < eps && abs(dp[2]) < eps)          //проверка условия окончания итераций по эпсилон
 			{
 				break;
 			}
 		}
-		cout << p0[0] << "p0 " << x[0] << " p1 " << x[3] << " p4 " << " q12: " << x[4] << " q01 " << x[8];
 		return x;
 	}
 
@@ -839,21 +869,21 @@ public:
 		cout << endl << "Значения:";
 		for (double value : m->values)
 		{
-			cout << value << " ";
+			cout << "\t" << value <<" ";
 		}
 		cout << endl << endl;
 
 		cout << "Столбцы: ";
 		for (int column : m->columns)
 		{
-			cout << column << " ";
+			cout <<"\t" << column <<" ";
 		}
 		cout << endl;
 
 		cout << "Строки: ";
 		for (int rows : m->rows)
 		{
-			cout << rows << " ";
+			cout << "\t" << rows;
 		}
 		cout << endl;
 
@@ -862,7 +892,7 @@ public:
 			cout << "Cжатые сторки: ";
 			for (int rows : m->nextRow)
 			{
-				cout << rows << " ";
+				cout << "\t" << rows << " ";
 			}
 			cout << endl;
 		}
@@ -881,8 +911,8 @@ public:
 			{
 				cout.width(12);
 				cout << right  << setprecision(5) << element->value <<", ";
-				cout << left << "i=" << element->column;
-				cout << left << " j=" << element->row << ",  ";
+				cout << left << "i=" << element->row;
+				cout << left << " j=" << element->column << ",  ";
 				dataType == DataType::KNUTHRowsList ? element = element->nextInRow : element = element->nextInColumn;
 			}
 		}
@@ -890,14 +920,14 @@ public:
 	}
 
 	//выводит на консоль результирующий вектор x
-	void ShowResultX(vector<double> x, bool newton = false)                                              //собираем результат в вектор x    
+	void ShowResultX(vector<double> x)                                              //собираем результат в вектор x    
 	{
 		cout << "\t\t\tРасчет давлений в узлах и объёмных расходов: \n\n";
 		for (int i = 0; i < N; i++)
 		{
-			auto title = (newton) ? signatureXN[i] : signatureX[i];
-			cout << i + 1 << ".\t" << title << " = " << "\t" << x[i] << endl;
+			cout << i + 1 << ".\t" << signatureXN[i] << " = " << "\t" << x[i] << endl;
 		}
+		cout << endl << line << endl<< endl;
 	}
 
 	//функция для вывода матрицы на экран
@@ -929,7 +959,7 @@ public:
 		case '-':
 			return -1.0;
 		case 'k':
-			return 0.5;
+			return k;
 		default:
 			cout << line << "\n\tНе правильный формат данных!" << endl << line;
 			return (int)symbol;
@@ -962,6 +992,8 @@ public:
 		else
 		{
 			cout << line << "\n\tНевозможно открыть файл с матрицей : " << filename << endl << line;
+			ERROR[0] = error;
+			ERROR[1] = (double)ERROR_TYPE::FILE;
 		}
 		return matrix;
 	}
@@ -969,7 +1001,7 @@ public:
 	//сохраняет результирующий вектор  в формате JSON в файл, ключ - название параметра
 	void WriteJSON(const string& filename,  const vector<double>& x)
 	{
-		string jsonData = ConvertVectorToJson(signatureX, x);
+		string jsonData = ConvertVectorToJson(signatureXN, x);
 		ofstream outputFile(filename);
 
 		if (outputFile.is_open())
@@ -980,6 +1012,8 @@ public:
 		else
 		{
 			cout << line << "\n\tНевозможно открыть файл для записи : " << filename << endl << line;
+			ERROR[0] = error;
+			ERROR[1] = (double)ERROR_TYPE::FILE;
 		}
 	}
 
@@ -990,7 +1024,7 @@ public:
 
 		for (size_t i = 0; i < title.size(); i++)
 		{
-			json += "    \"" + title[i] + "\": " + to_string(x[i]);                  //собираем название параметра и его значение в строку json 
+			json += "    \"" + title[i] + "\": " + to_string(x[i]);                  //собираем название параметра и его значение в строку JSON 
 
 			if (i != title.size() - 1)
 			{
@@ -1011,11 +1045,13 @@ public:
 	}
 };
 
+
+
 //прототип; вычисляет время выполнения ф-ции, в качестве параметров передатся объект и его метод, время выполнения которого измеряется
 double GetCalculationRuntime(HydraulicNet, vector<double>(HydraulicNet::* calculation)(vector<double>&), vector<double>, vector<double>*);
 
 //прототип; выполняет обработку результатов расчётов
-vector<double> Run(DataType, HydraulicNet, const vector<vector<double>>, vector<double>, vector<double>, bool save = true);
+vector<double> Run(DataType, HydraulicNet, const vector<vector<double>>,  vector<double>, const vector<double>, bool save = true);
 
 //
 //************************************* MAIN *******************************************
@@ -1027,81 +1063,50 @@ int main()
 	Pipe pipe;
 	double k = pipe.k;                          //для системы линейных уравнений сразу вычисляем коэфф. проводимости - гидравлическое сопротивление
 
+	//signatureX' :: i :{ "P1", "P2", "P3", "P4", "Q12", "Q13", "Q24", "Q34",       "Q01", "Q02", "Q03", "Q04" }
+	//                       0    1     2     3     4      5      6       7            8     9      10    11             // 
+
 	vector<vector<double>> a =
 	{
-		{1, 0, 0, 0, k, 0, 0, 0, 0, 0, 0, 0},
-		{0, 1, 0, 0, 0, 0, k, 0, 0, 0, 0, 0},
-		{0, 0, 1, 0, 0, 0, 0, 0, 0, 0, k, 0},
-		{0, 0, 0, 1, 0, 0, 0, 0, -k, 0, 0, 0},
-		{0, 0, 0, 0, -1, 1, 0, 0, 0, 0, 0, 1},
-		{0, 0, 0, 0, 0, 1, 1, -1, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 1, -1, 1, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0, 0, 1, -1, -1},
-		{-1, 1, 0, 0, 0, k, 0, 0, 0, 0, 0, 0},
-		{0, -1, 0, 1, 0, 0, 0, k, 0, 0, 0, 0},
-		{-1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, k},
-		{0, 0, 0, 1, -1, 0, 0, 0, 0, k, 0, 0},
+		{1,  0, 0, 0,   0, 0, 0,  0,    k, 0, 0,   0},
+		{0,  1, 0, 0,   0, 0, 0,  0,    0, k, 0,   0},
+		{0,  0, 1, 0,   0, 0, 0,  0,    0, 0, k,   0},
+		{0,  0, 0, 1,   0, 0, 0,  0,    0, 0, 0,  -k},
+
+		{0,  0, 0, 0,   1, 1, 0,  0,   -1, 0, 0,   0},
+		{0,  0, 0, 0,   0, 1, 0, -1,    0, 0, 1,   0},
+		{0,  0, 0, 0,   0, 0, 1,  1,    0, 0, 0,  -1},
+		{0,  0, 0, 0,   1, 0,-1,  0,    0, 1, 0,   0},
+
+		{-1, 1, 0, 0,   k, 0, 0,  0,    0, 0, 0,   0},
+		{0, -1, 0, 1,   0, 0, k,  0,    0, 0, 0,   0},
+		{-1, 0, 1, 0,   0, k, 0,  0,    0, 0, 0,   0},
+		{ 0, 0, 1,-1,   0, 0,  0, k,    0, 0, 0,   0},
 	};
+
 	HydraulicNet net(a, N, k);
 	vector<double> b;
 	vector<double> pInput(PInputCount, 0);                                                      //вводим входные давления, 4 * Pвхю
 
-	Mode mode = Mode::Debug;
+	Mode mode = Mode::DEBUG;
 
 	//************************************ ДЛЯ ТЕСТОВ !!!!! ******************************      //для тестов харкодим Po 1..4
 
-	(mode == Mode::Release) ? pInput = net.InputValues(PInputCount) : pInput = { 150, 130, 100, 50 };
+	(mode == Mode::RELEASE) ? pInput = net.InputValues(PInputCount) : pInput = { 150, 130, 100, 50 };
 
 
 	b = { pInput[0], pInput[1], pInput[2], pInput[3], 0, 0, 0, 0, 0, 0, 0, 0 };
 	vector<double> x(N, 0.0);                                                                   //собираем результат в вектор x
-/*
-	cout << endl << "\tПреобразование исходной матрицы к виду Coordinate List:\n" << endl;
-	net.CLA = net.ConvertToCLA(a);
-	net.ShowCompressedMatrix(&net.CLA, DataType::CLA);
 
-	cout << endl << "\tПреобразование исходной матрицы к виду CompressedSparseRow:\n" << endl;
-	net.СSRA = net.ConvertToCSRA(a);
-	net.ShowCompressedMatrix(&net.СSRA, DataType::CSRA);
-
-	cout << endl << "\tПреобразование исходной матрицы к виду CompressedSparseRowAdapted:\n" << endl;
-	net.CSRAA = net.ConvertToCSRAAdapted(a);
-	net.ShowCompressedMatrix(&net.CSRAA, DataType::CSRAA);
-
-	cout << endl << "\tПреобразование исходной матрицы к виду список Кнута:\n" << endl;
-	net.ConvertToKnuthLists(a);
-	net.ShowKnuthList(net.KNUTHrows, DataType::KNUTHRowsList);
-	net.ShowKnuthList(net.KNUTHcolumns, DataType::KNUTHColumnsList);
-
-
-	cout << "\n\n" << line << "\n\tРасчет давлений в узлах и объёмных расходов ы трубопроводах.\n" << line << endl;
-
-	double funcRuntime = GetCalculationRuntime(net, &HydraulicNet::GaussWithKnuthLists, b, &x);
-	net.ShowResultX(x);
-	cout << "\nВремя расчетов  Гаусом c матрицей в варианте связных списков по модели Кнута, мкс: " << funcRuntime << endl;
-	cout << line;
-
-	funcRuntime = GetCalculationRuntime(net, &HydraulicNet::GaussWithCoordinateVectors, b, &x);
-	net.ShowResultX(x);
-	cout << "\nВремя расчетов  Гаусом c матрицей в варианте Coordinate List, мкс: " << funcRuntime << endl;
-	cout << line;
-
-	funcRuntime = GetCalculationRuntime(net, &HydraulicNet::Gauss, b, &x);						//выводим время выполнения метода Гауса
-	net.ShowResultX(x);
-	cout << "\nВремя расчетов простым Гаусом, мкс: " << funcRuntime << endl;
-	cout << line;
-
-	net.WriteJSON(filenameResultJSON, net.signatureX, x);
-	a = net.ReadMatrix(filenameM, (bool)mode);*/
-
-	x = { 100, 200 , 300 , 400 , 500, 600, 700, 800, 900, 1000, 1100, 1200 };					//X0
-//	x = net.NewtonHardCode(pInput, x);
 	ERROR = { 0, 0 };																			//сброс ошибок
-	ERROR2 = { {0, 0},{0,0} };
-	Run(DataType::CLA, net, a,b,x);
+	ERROR2 = { {0, 0},{0,0} };																	
+
+	Run(DataType::ALL, net, a,b,x);																//ЗАПУСК НЕОБХОДИМЫХ РАСЧЕТОВ
+	
 	cout << endl << line << endl << "Error: " << ERROR[1];
 	return 0;
 }
+
 //выполняет обработку результатов расчётов, save - флаг сохранения в JSON файл
 vector<double> Run (DataType dataType, HydraulicNet net, const vector<vector<double>> a, vector<double> b, vector<double> x,  bool save)
 {
@@ -1111,14 +1116,13 @@ vector<double> Run (DataType dataType, HydraulicNet net, const vector<vector<dou
 	if (dataType == DataType::ALL)
 	{
 		dataType = DataType::CLA;	
-		runAll = true;																				//пробежимся по всему списку задач, CLA должна быть сверху switch
+		runAll = true;																			//пробежимся по всему списку задач, CLA должна быть сверху switch
 	}
 	switch (dataType) 
 	{
 	case DataType::CLA :
 		cout << " Coordinate List, 3 вектора: \n\n";														
 		net.CLA = net.ConvertToCLA(a);
-		net.ShowCompressedMatrix(&net.CLA, DataType::CLA);
 		funcRuntime [(int)Task::GaussCLA] = GetCalculationRuntime(net, &HydraulicNet::GaussCLA, b, &x);
 		if(!runAll) 
 			break;
@@ -1135,11 +1139,12 @@ vector<double> Run (DataType dataType, HydraulicNet net, const vector<vector<dou
 		net.CSRAA = net.ConvertToCSRAAdapted(a);
 		net.ShowCompressedMatrix(&net.CSRAA, DataType::CSRAA);
 //		funcRuntime [(int)Task::GaussCSRAA] = GetCalculationRuntime(net, &HydraulicNet::GaussCRSAA, b, &x); //выводим время выполнения метода Гауса
+		net.ShowCompressedMatrix(&net.CSRAA, DataType::CSRAA);
 		if (!runAll)
 			break;
 
 	case DataType::KNUTHRowsList :
-		cout << "список Кнута : \n" << endl;														//список начала каждой строчки, список начала каждой строки
+		cout << "список Кнута : \n" << endl;													    //список начала каждой строчки, список начала каждого столбца
 		net.ConvertToKnuthLists(a);
 		net.ShowKnuthList(net.KNUTHrows, DataType::KNUTHRowsList);
 		net.ShowKnuthList(net.KNUTHcolumns, DataType::KNUTHColumnsList);
@@ -1147,17 +1152,37 @@ vector<double> Run (DataType dataType, HydraulicNet net, const vector<vector<dou
 		if (!runAll)
 			break;
 	case DataType::MATRIX :
-		funcRuntime [(int)Task::Gauss] = GetCalculationRuntime(net, &HydraulicNet::Gauss, b, &x);	//матрица без сжатия
-	
+		funcRuntime [(int)Task::Gauss] = GetCalculationRuntime(net, &HydraulicNet::Gauss, b, &x);	//матрица без сжатия	
 	}
 
-	net.ShowResultX(x, true);
-
-	if (save)
+	if (x[0] != error) 
 	{
-		net.WriteJSON(filenameResultJSON, x);
-	}
+		net.ShowResultX(x);
+		cout << "\n Время расчетов Гауссом с 3 векторами: " << funcRuntime[(int)Task::GaussCLA] << ", мкс.";
+		cout << "\n Время расчетов Гауссом с разреженной матрицей без сжатия: " << funcRuntime[(int)Task::Gauss] << ", мкс.";
+		cout << endl << line << endl;
+		if (save)
+		{
+			net.WriteJSON(filenameResultJSON, x);
+		}
 
+		cout << endl << line << endl;
+		cout << " Расчет уравнения z^2 - 1 методом Ньютона.\n\n";
+
+		double z0{1.5};
+		double z = net.Newton(equation1, z0);
+		cout << z << endl;
+
+		vector<double> pInput = {b[0], b[1], b[2], b[3]};
+		
+		x = net.NewtonHardCode(pInput, x);
+
+		net.ShowResultX(x);
+	}
+	else
+	{
+		cout << endl << line << "\nОшибка номер: " << x[1] << ", см. enum ERROR_TYPE.\n";
+	}
 	return b;
 };
 

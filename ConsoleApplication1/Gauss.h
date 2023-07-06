@@ -5,20 +5,19 @@
 using namespace std;
 
 typedef double (*Function)(double);         //для передачи различных функций в виде указателя
-typedef double (*FunctionArr[])(double);       //для передачи массива указателей на функции в качестве параметров
+typedef double (*FunctionArr[])(double);    //для передачи массива указателей на функции в качестве параметров
 
 //Functions function(double, double, double) = {f1, f2, f3, f4, f5, f6, f7, f8};
 
 //
 // ******************************** Формулы и производные ******************************
 // 
-//производные в системе из 4-ех узлов = 1, -1, -2 * k * Q
-//для произвольной функции можно использовать численный метод deltaY / deltaX
-double GetDif(Function f, double x, double dp  = 1.0e-6)
-{
-    double derivative = (f(x + dp) - f(x - dp)) / (2 * dp);
-    return derivative;
+
+//уравнение для Ньютона на одно уравнение
+double equation1 (double x) {
+    return x * x + x - 6;
 }
+
 
 //
 //      p01---->p1---->p2<----p02
@@ -28,7 +27,8 @@ double GetDif(Function f, double x, double dp  = 1.0e-6)
 // 
 // 
 //функции для исходных уравнений
-double f1(double p1, double Q01, double p01, double k)
+//производные в системе из 4-ех узлов = 1, -1, -2 * k * Q
+double f1(double p1, double Q01, double p01, double k)          //k можно будет настроить для каждого участка отдельно
 {
     return p01 - p1 - Q01 * Q01 * k;
 }
