@@ -24,7 +24,7 @@ enum class ERROR_TYPE
 	GAUSSCLA,
 	GAUSSCSRAA,
 	GAUSSKNUTH,
-	NEWTON1,
+	NEWTON,
 	NEWTONHARDCODE,
 	INVERSE,
 	FILE,
@@ -49,6 +49,7 @@ void LOG(string comment, const int num, ...)
 	if (outputFile.is_open())
 	{
 		string result{ comment };
+		result += " : ";
 		va_list factor;
 		va_start(factor, num);
 		for (int i = 0;i < num; i++)
@@ -646,6 +647,41 @@ public:
 		return ERROR;
 	}
 
+	//для произвольной функции можно использовать численный метод deltaY / deltaX
+	double GetDiff(double (*equation)(double), double x, double dp = 1.0e-6)
+	{
+		double derivative = (equation(x + dp) - equation(x - dp)) / (2 * dp);
+		return derivative;
+	}
+	
+
+	//считает Ньютоном одно уравнение
+	double Newton(double (*equation)(double), double x, double epsilon = 1e-06, int it = 100)
+	{
+		double dx{}, df{};
+		for (int i = 0; i < it; i++) 
+		{
+			double f = equation(x);
+			df = GetDiff(equation, x, epsilon);
+			if (df != 0) {
+				dx = f / df;
+			}
+			else 
+			{
+				ERROR[0] = error;
+				ERROR[1] = (double)ERROR_TYPE::NEWTON;
+				return 0;
+			}
+			x -= dx;
+			LOG("шаг итерации Ньютона1 f df dx x ", 4, f, df, dx, x);
+			if (abs(f) < epsilon)
+			{
+				return x;
+			}
+		}
+		return x;
+	}
+
 	//функция для нахождения обратной матрицы
 	vector<vector<double>> InverseMatrix(vector<vector<double>> a)
 	{
@@ -674,12 +710,12 @@ public:
 				{
 					cout << "Матрица вырожденная, обратной матрицы не существует." << std::endl;
 					ERROR2[0][0] = error;
-					ERROR2[0][1] = (double)ERROR_TYPE::INVERSE;                     
+					ERROR2[0][1] = (double)ERROR_TYPE::INVERSE;
 					return ERROR2;
 				}
 				swap(extended[i], extended[j]);
 			}
-		
+
 			for (int j = i + 1; j < N; j++)                    //прямой ход Гаусса
 			{
 				if (extended[j][i] != 0)
@@ -690,7 +726,7 @@ public:
 						extended[j][k] -= coef * extended[i][k];
 					}
 					extended[j][i] = 0.0;
-                }		
+				}
 			}
 		}
 
@@ -714,41 +750,12 @@ public:
 		return inverse;
 	}
 
-	//для произвольной функции можно использовать численный метод deltaY / deltaX
-	double GetDiff(double (*equation)(double), double x, double dp = 1.0e-6)
-	{
-		double derivative = (equation(x + dp) - equation(x - dp)) / (2 * dp);
-		return derivative;
-	}
-	double GetDifff(double (*equation)(double), double x, double dp = 1.0e-6)
-	{
-		return 2*x + 1;
-	}
-
-
-	//считает Ньютоном одно уравнение
-	double Newton(double (*equation)(double), double x, double epsilon = 1e-06, int it = 100)
-	{
-		for (int i = 0; i < it; i++) 
-		{
-			double f = equation(x);
-			double df = GetDiff(equation, x, epsilon);
-			double dx = f / df;
-			x = x - dx;
-			LOG("шаг итерации Ньютона1",1,dx);
-			if (abs(f) < epsilon)
-			{
-				return x;
-			}
-		}
-		return x;
-	}
-
 	//TODO            typedef double (*FunctionArr[])(double);
 	//считает СНАУ методом Ньютона; ограничено число итераций: 100, но можно перегрузить в параметрах эпсилон - приближение и число итераций
 	vector<double> NewtonHardCode(const vector<double>& p0, vector<double>& x, double eps = 1e-6, int itMax = 100, int N = 8)
 	{
 		int iterations{ 0 };						             //ограничим число итераций: 100, но можно перегрузить в параметрах эпсилон - приближение и iter
+		int sumF{ 0 };
 
 		for (int it = 0; it < itMax; it++)
 		{													     //УРАВНЕНИЯ В виде функций в Gauss.h
@@ -835,10 +842,14 @@ public:
 				x[i] += dp[i]; 
 			}
 
-	//		for ()
-			if (abs(dp[0]) < eps && abs(dp[1]) < eps && abs(dp[2]) < eps)          //проверка условия окончания итераций по эпсилон
+			for (int i = 0; i < N; i++)
 			{
-				break;
+				sumF += abs(f[i]);
+			}
+
+			if (sumF < eps)          //проверка условия окончания итераций по эпсилон
+			{
+				return x;
 			}
 		}
 		return x;
@@ -1167,7 +1178,7 @@ vector<double> Run (DataType dataType, HydraulicNet net, const vector<vector<dou
 		}
 
 		cout << endl << line << endl;
-		cout << " Расчет уравнения z^2 - 1 методом Ньютона.\n\n";
+		cout << " Расчет уравнения x * x + x - 6 = 0 методом Ньютона.\n\n";
 
 		double z0{1.5};
 		double z = net.Newton(equation1, z0);

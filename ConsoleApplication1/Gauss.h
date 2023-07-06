@@ -18,6 +18,11 @@ double equation1 (double x) {
     return x * x + x - 6;
 }
 
+double GetDifff(double (*equation)(double), double x, double dp = 1.0e-6)
+{
+    return 2 * x + 1;
+}
+
 
 //
 //      p01---->p1---->p2<----p02
