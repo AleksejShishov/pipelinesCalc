@@ -28,49 +28,49 @@ double GetDifff(double (*equation)(double), double x, double dp = 1.0e-6)
 //      p01---->p1---->p2<----p02
 //              |      |
 //              v      v
-//      po3---->p3---->p4----->p4
+//      p03---->p3---->p4----->p04
 // 
 // 
 //функции для исходных уравнений
 //производные в системе из 4-ех узлов = 1, -1, -2 * k * Q
-double f1(double p1, double Q01, double p01, double k)          //k можно будет настроить для каждого участка отдельно
+double f1(double p01, double p1, double Q12, double k, double Q13)          //k можно будет настроить для каждого участка отдельно
 {
-    return p01 - p1 - Q01 * Q01 * k;
+    return p01 - p1 - k * Q12 * Q12 - 2 * k * Q12 * Q13 - k * Q13 * Q13;                                                      //p01 - p1 - Q01 * Q01 * k 
 }
 
-double f2(double p1, double p2, double Q12, double k)
+double f2(double p1, double p2, double Q12, double k, double Qzz = 0)
 {
     return p1 - p2 - Q12 * Q12 * k;
 }
 
-double f3(double p2, double p4, double Q24, double k)
+double f3(double p2, double p4, double Q24, double k, double Qzz = 0)
 {
     return p2 - p4 - Q24 * Q24 * k;
 }
 
-double f4(double p1, double p3, double Q13, double k)
+double f4(double p1, double p3, double Q13, double k, double Qzz = 0)
 {
     return p1 - p3 - Q13 * Q13 * k;
 }
 
-double f5(double p3, double p4, double Q34, double k)
+double f5(double p3, double p4, double Q34, double k, double Qzz = 0)
 {
     return p3 - p4 - Q34 * Q34 * k;
 }
 
-double f6(double p4, double p04, double Q04, double k)
+double f6(double p4, double p04, double Q24, double k, double Q34)
 {
-    return p4 - p04 - Q04 * Q04 * k;
+    return p4 - p04 - k * Q24 * Q24 - 2 * k * Q24 * Q34 - k * Q34 * Q34;
 }
 
-double f7(double p2, double Q02, double p02, double k)
+double f7(double p02, double p2, double Q24, double k, double Q12)
 {
-    return p02 - p2 - Q02 * Q02 * k;
+    return p02 - p2 - k * Q24 * Q24 + k * Q12 * Q12;
 }
 
-double f8(double p3, double Q03, double p03, double k)
+double f8(double p03, double p3, double Q34, double k, double Q13)
 {
-    return p03 - p3 - Q03 * Q03 * k;
+    return p03 - p3 - k * Q34 * Q34 + k * Q13 * Q13;
 }
 
 double f9(double p0, double Q03, double p03, double k) { return p0; };

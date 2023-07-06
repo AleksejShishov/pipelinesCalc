@@ -10,7 +10,8 @@
 
 using namespace std;
 
-const string line(100, '=');                    //строка разделитель дл€ вывода на консоль
+string line(100, '=');                    //строка разделитель дл€ вывода на консоль
+line = ооо'\n';
 const string filenameM = "matrix.txt";          //матрицу можно загрузить из файла
 const string filenameResultJSON = "result.json";//расчетные параметры сохран€ютс€ в формате JSON 
 
@@ -758,7 +759,14 @@ public:
 		int sumF{ 0 };
 
 		for (int it = 0; it < itMax; it++)
-		{													     //”–ј¬Ќ≈Ќ»я ¬ виде функций в Gauss.h
+		{			
+										     //”–ј¬Ќ≈Ќ»я ¬ виде функций в Gauss.h
+		//
+		//      p01---->p1---->p2<----p02
+		//              |      |
+		//              v      v
+		//      p03---->p3---->p4----->p04
+		// 
 			x[8] = x[4] + x[5];
 			x[9] = x[6] - x[4];
 			x[10] = x[7] - x[5];
@@ -1182,7 +1190,7 @@ vector<double> Run (DataType dataType, HydraulicNet net, const vector<vector<dou
 
 		double z0{1.5};
 		double z = net.Newton(equation1, z0);
-		cout << z << endl;
+		cout << z << endl << endl << line;
 
 		vector<double> pInput = {b[0], b[1], b[2], b[3]};
 		
