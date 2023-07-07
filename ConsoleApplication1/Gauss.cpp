@@ -11,7 +11,6 @@
 using namespace std;
 
 string line(100, '=');                    //строка разделитель дл€ вывода на консоль
-line = ооо'\n';
 const string filenameM = "matrix.txt";          //матрицу можно загрузить из файла
 const string filenameResultJSON = "result.json";//расчетные параметры сохран€ютс€ в формате JSON 
 
@@ -753,33 +752,29 @@ public:
 
 	//TODO            typedef double (*FunctionArr[])(double);
 	//считает —Ќј” методом Ќьютона; ограничено число итераций: 100, но можно перегрузить в параметрах эпсилон - приближение и число итераций
-	vector<double> NewtonHardCode(const vector<double>& p0, vector<double>& x, double eps = 1e-6, int itMax = 100, int N = 8)
+	vector<double> NewtonHardCode(const vector<double>& p0, vector<double>& x, double eps = 1e-6, int itMax = 100, int N = 8, double stepK = 1)
 	{
 		int iterations{ 0 };						             //ограничим число итераций: 100, но можно перегрузить в параметрах эпсилон - приближение и iter
 		int sumF{ 0 };
 
 		for (int it = 0; it < itMax; it++)
 		{			
-										     //”–ј¬Ќ≈Ќ»я ¬ виде функций в Gauss.h
+										     //”–ј¬Ќ≈Ќ»я ¬ виде функций написаны в Gauss.h
 		//
 		//      p01---->p1---->p2<----p02
 		//              |      |
 		//              v      v
 		//      p03---->p3---->p4----->p04
 		// 
-			x[8] = x[4] + x[5];
-			x[9] = x[6] - x[4];
-			x[10] = x[7] - x[5];
-			x[11] = x[6] + x[7];
-
-			double f1 = p0[0] - x[0] - x[4] * x[4] * k;			 //вычисление значений функций и их производных
-			double f2 = x[0] - x[1] - x[5] * x[5] * k;
-			double f3 = x[1] - x[3] - x[7] * x[7] * k;
-			double f4 = x[0] - x[2] - x[11] * x[11] * k;
-			double f5 = x[2] - x[3] - x[9] * x[9] * k;
-			double f6 = x[3] - p0[3] - x[8] * x[8] * k;
-			double f7 = p0[1] - x[1] - x[6] * x[6] * k;
-			double f8 = p0[2] - x[2] - x[10] * x[10] * k;
+			 //вычисление значений функций и их производных
+			double f1 = p0[0] - x[0]  - x[4] * x[4] * k - 2 * k * x[4] * x[5] - k * x[5] * x[5];			
+			double f2 = x[0]  - x[1]  - x[4] * x[4] * k;
+			double f3 = x[1]  - x[3]  - x[6] * x[6] * k;
+			double f4 = x[0]  - x[2]  - x[5] * x[5] * k;
+			double f5 = x[2]  - x[3]  - x[7] * x[7] * k;
+			double f6 = x[3]  - p0[3] - x[6] * x[6] * k - 2 * k * x[6] * x[7] - k * x[7] * x[7];
+			double f7 = p0[1] - x[1]  - x[6] * x[6] * k + 2 * k * x[6] * x[4] - k * x[4] * x[4];
+			double f8 = p0[2] - x[2]  - x[7] * x[7] * k + 2 * k * x[7] * x[5] - k * x[5] * x[5];
 			/*
 						 double f9  = p0[0];                     //добавим уравнени€, чтобы не мен€ть размер матрица якоби
 						 double f10 = p0[1];
@@ -787,24 +782,37 @@ public:
 						 double f12 = p0[3];
 			*/
 			double df1dp1 = -1;									 //производные
-			double df1dQ01 = -2 * x[4] * k;
-			double df2dp2 = -1;
-			double df2dQ12 = -2 * x[5] * k;
-			double df3dp2 = 1;
+			double df1dQ12 = -2 * x[4] * k - 2 * k * x[5];
+			double df1dQ13 = -2 * x[5] * k - 2 * k * x[4];
+
+			double df2dp1  =  1;
+			double df2dp2  = -1;
+			double df2dQ12 = -2 * x[4] * k;
+			
+			double df3dp2  = 1;
 			double df3dp4 = -1;
-			double df3dQ24 = -2 * x[7] * k;
-			double df4dp1 = 1;
-			double df4dp3 = -1;
-			double df4dQ13 = -2 * x[11] * k;
-			double df5dp3 = 1;
+			double df3dQ24= -2 * x[6] * k;
+			
+			double df4dp1  =  1;
+			double df4dp3  = -1;
+			double df4dQ13 = -2 * x[5] * k;
+			
+			double df5dp3  = 1;
 			double df5dp4 = -1;
-			double df5dQ34 = -2 * x[9] * k;
-			double df6dp4 = 1;
-			double df6dQ04 = -2 * x[8] * k;
-			double df7dp2 = -1;
-			double df7dQ02 = -2 * x[6] * k;
-			double df8dp3 = -1;
-			double df8dQ03 = -2 * x[10] * k;
+			double df5dQ34= -2 * x[7] * k;
+			
+			double df6dp4   = 1;
+			double df6dQ24 = -2 * x[6] * k - 2 * k * x[7];
+			double df6dQ34 = -2 * x[7] * k - 2 * k * x[6];
+
+			double df7dp2  = -1;
+			double df7dQ24 = -2 * x[6] * k + 2 * k * x[4];
+			double df7dQ12 =  2 * x[6] * k - 2 * k * x[4];
+
+			double df8dp3  = -1;
+			double df8dQ34 = -2 * x[7] * k + 2 * k * x[5];
+			double df8dQ13 =  2 * x[7] * k - 2 * k * x[5];
+
 
 			//                                           ***     ћатрица якоби    ***
 			//signatureX' :: i :{ "P1", "P2", "P3", "P4", "Q12", "Q13", "Q24", "Q34",       "Q01", "Q02", "Q03", "Q04" }
@@ -814,14 +822,14 @@ public:
 
 			vector<vector<double>> jm =
 			{
-										 {df1dp1,       0,        0,        0,       0,       0,     0,        0},
-										 {0,        df2dp2,       0,        0,       df2dQ12, 0,     0,        0},
-										 {0,        df3dp2,       0,   df3dp4,       0,       0,     df3dQ24,  0},
-										 {df4dp1,       0,     df4dp3,      0,       0, df4dQ13,     0,        0},
-										 {0,            0,     df5dp3, df5dp4,       0,       0,     0,  df5dQ34},
-										 {0,            0,        0,   df6dp4,       0,       0,     0,        0},
-										 {0,        df7dp2,       0,        0,       0,       0,     0,        0},
-										 {0,            0,     df8dp3,      0,       0,       0,     0,        0}
+										 {df1dp1,       0,        0,        0,     df1dQ12, df1dQ13,        0,        0},
+										 {df2dp1,   df2dp2,       0,        0,     df2dQ12,       0,        0,        0},
+										 {0,        df3dp2,       0,   df3dp4,       0,           0,  df3dQ24,        0},
+										 {df4dp1,       0,     df4dp3,      0,       0,     df4dQ13,        0,        0},
+										 {0,            0,     df5dp3, df5dp4,       0,           0,        0,  df5dQ34},
+										 {0,            0,        0,   df6dp4,       0,           0,  df6dQ24,  df6dQ34},
+										 {0,        df7dp2,       0,        0,     df7dQ12,       0,  df7dQ24,        0},
+										 {0,            0,     df8dp3,      0,       0,     df8dQ13,        0,  df8dQ34}
 
 			};
 			vector<vector<double>>  inverseJ = InverseMatrix(jm);
@@ -835,13 +843,13 @@ public:
 
 			vector<double> f = { -f1, -f2, -f3, -f4, -f5, -f6, -f7, -f8 };         //вектор функций
 
-			vector<double> dp(N, 0);                                               //jMatrix * dp = f
+			vector<double> dp(N, 0);                                               //Xk+1 = Xk - F * J^-1
 
 			for (int i = 0; i < N; i++)
 			{
 				for (int j = 0; j < N; j++)
 				{
-					dp[i] += inverseJ[i][j] * f[j];
+					dp[i] += stepK * inverseJ[i][j] * f[j];
 				}
 			}
 
@@ -849,6 +857,11 @@ public:
 			{
 				x[i] += dp[i]; 
 			}
+
+			x[8] = x[4] + x[5];
+			x[9] = x[6] - x[4];
+			x[10] = x[7] - x[5];
+			x[11] = x[6] + x[7];
 
 			for (int i = 0; i < N; i++)
 			{

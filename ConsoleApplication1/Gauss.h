@@ -65,19 +65,19 @@ double f6(double p4, double p04, double Q24, double k, double Q34)
 
 double f7(double p02, double p2, double Q24, double k, double Q12)
 {
-    return p02 - p2 - k * Q24 * Q24 + k * Q12 * Q12;
+    return p02 - p2 - k * Q24 * Q24 + 2 * k * Q24 * Q12 - k * Q12 * Q12;
 }
 
 double f8(double p03, double p3, double Q34, double k, double Q13)
 {
-    return p03 - p3 - k * Q34 * Q34 + k * Q13 * Q13;
+    return p03 - p3 - k * Q34 * Q34 + 2 * k * Q34 * Q13 - k * Q13 * Q13;
 }
-
+/*  //если не выражать Q0n, через объЄмные расходы Qnk, то нужны доп. уравнени€
 double f9(double p0, double Q03, double p03, double k) { return p0; };
 double f10(double p0, double Q03, double p03, double k) { return p0; };
 double f11(double p0, double Q03, double p03, double k) { return p0; };
-double f12(double p0, double Q03, double p03, double k) { return p0; };
-
+double f12(double p0, double Q03, double p03, double k) { return p0; };*/
+/*/
 //производные дл€ системы уравнений
 double df1dp1(double Q01, double k)
 {
@@ -177,4 +177,4 @@ double df8dp3()
 double df8dQ03(double Q03, double k)
 {
     return -2 * Q03 * k;
-}
+}*/
