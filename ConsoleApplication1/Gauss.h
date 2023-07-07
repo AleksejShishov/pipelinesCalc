@@ -77,104 +77,125 @@ double f9(double p0, double Q03, double p03, double k) { return p0; };
 double f10(double p0, double Q03, double p03, double k) { return p0; };
 double f11(double p0, double Q03, double p03, double k) { return p0; };
 double f12(double p0, double Q03, double p03, double k) { return p0; };*/
-/*/
+
 //производные для системы уравнений
-double df1dp1(double Q01, double k)
+double df1dp1(double Qzz, double Qzx, double k)
 {
     return -1;
 }
 
-double df1dQ01(double p1, double Q01, double k)
+double df1dQ12(double Q12, double Q13, double k)
 {
-    return -2 * Q01 * k;
+    return -2 * k * Q12 - 2 * k * Q13;
 }
 
-double df2dp1()
+
+double df1dQ13(double Q12, double Q13, double k)
+{
+    return -2 * k * Q13 - 2 * k * Q12;
+}
+
+double df2dp1(double Qzz, double Qzx, double k)
 {
     return 1;
 }
 
-double df2dp2()
+double df2dp2(double Qzz, double Qzx, double k)
 {
     return -1;
 }
 
-double df2dQ12(double Q12, double k)
+double df2dQ12 (double Q12, double Qzz, double k)
 {
-    return -2 * Q12 * k;
+    return -2 * k * Q12;
 }
 
-double df3dp2()
+double df3dp2(double Qzz, double Qzx, double k)
 {
     return 1;
 }
 
-double df3dp4()
+double df3dp4(double Qzz, double Qzx, double k)
 {
     return -1;
 }
 
-double df3dQ24(double Q24, double k)
+double df3dQ24(double Q24, double Qzx, double k)
 {
     return -2 * Q24 * k;
 }
 
-double df4dp1()
+double df4dp1(double Qzz, double Qzx, double k)
 {
     return 1;
 }
 
-double df4dp3()
+double df4dp3(double Qzz, double Qzx, double k)
 {
     return -1;
 }
 
-double df4dQ13(double Q13, double k)
+double df4dQ13(double Q13, double Qzz, double k)
 {
     return -2 * Q13 * k;
 }
 
-double df5dp3()
+double df5dp3(double Qzz, double Qzx, double k)
 {
     return 1;
 }
 
-double df5dp4()
+double df5dp4(double Qzz, double Qzx, double k)
 {
     return -1;
 }
 
-double df5dQ34(double Q34, double k)
+double df5dQ34(double Q34, double Qzz, double k)
 {
     return -2 * Q34 * k;
 }
 
-double df6dp4()
+double df6dp4(double Qzz, double Qzx, double k)
 {
     return 1;
 }
 
-double df6dQ04(double Q04, double k)
+double df6dQ24(double Q24, double Q34, double k)
 {
-    return -2 * Q04 * k;
+    return -2 * k * Q24 - 2 * k * Q34;
 }
 
-double df7dp2()
+double df6dQ34(double Q24, double Q34, double k)
+{
+    return -2 * k * Q24 - 2 * k * Q34;
+}
+
+double df7dp2(double Qzz, double Qzx, double k)
 {
     return -1;
 }
 
-double df7dQ02(double Q02, double k)
+double df7dQ24(double Q24, double Q12, double k)
 {
-    return -2 * Q02 * k;
+    return -2 * k * Q24 + 2 * k * Q12;
 }
 
-double df8dp3()
+double df7dQ12(double Q24, double Q12, double k)
+{
+    return  2 * k * Q24 + 2 * k * Q12;
+}
+
+double df8dp3(double Qzz, double Qzx, double k)
 {
     return -1;
 }
 
-double df8dQ03(double Q03, double k)
+double df8dQ34(double Q34, double Q13, double k)
 {
-    return -2 * Q03 * k;
-}*/
+    return -2 * k * Q34 + 2 * k * Q13;
+}
+
+double df8dQ13(double Q34, double Q13, double k)
+{
+    return 2 * k * Q34 - 2 * k * Q13;
+}

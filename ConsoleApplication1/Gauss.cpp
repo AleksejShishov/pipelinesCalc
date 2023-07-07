@@ -31,7 +31,6 @@ enum class ERROR_TYPE
 	Max
 };
 
-
 //режимы для отладки
 enum class Mode
 {
@@ -44,7 +43,8 @@ const string LOGfile = "param.log";
 //логи
 void LOG(string comment, const int num, ...)
 {
-	ofstream outputFile(LOGfile);
+	ofstream outputFile;
+	outputFile.open(LOGfile, ios_base::app);
 
 	if (outputFile.is_open())
 	{
@@ -79,7 +79,8 @@ enum class Task
 	GaussKnuth,
 	Newton1,
 	NewtonHardCode4,
-	MaxTask = 6
+	All,
+	MaxTask = 7
 };
 
 const int PInputCount{ 4 };                     //число входных трубопроводов, 4 по умолчанию
@@ -193,31 +194,6 @@ public:
 	//********************************* КОНВЕРТАЦИЯ РАЗРЕЖЕННОЙ МАТРИЦЫ *************
 	//
 	//
-	void ConvetrtToVector(vector<vector<double>> matrix, vector<double>& values, vector<int>& rows, vector<int>& columns, vector<int>& nextRow)
-	{
-		values.resize(numNonZero);
-		rows.resize(numNonZero);
-		columns.resize(numNonZero);
-		nextRow.resize(N + 1);
-		int c = 0;                              //кумулятивное число не нулевых элементов в строке
-		nextRow.push_back(c);
-		for (int i = 0; i < N; i++)
-		{
-			for (int j = 0; j < N; j++)
-			{
-				if (matrix[i][j] != 0)
-				{
-					values.push_back(matrix[i][j]);
-					columns.push_back(j);
-					c++;
-				}
-			}
-			nextRow.push_back(c);
-		}	
-		for (double c : values)
-		cout << "   " << c;
-	}
-
 	//конвертирует разреженную матрицу в формат 3-х векторов: значения, координаты i, координаты j
 	CompressedMatrix ConvertToCLA(const vector<vector<double>>& matrix)
 	{
@@ -225,10 +201,6 @@ public:
 		vector<int> columns;
 		vector<int> rows;
 		CompressedMatrix CLAVectors;
-		vector<int> none;
-
-//		ConvetrtToVector(matrix, CLA.values,  CLA.rows, CLA.columns, none);
-		
 
 		for (int i = 0; i < N; i++)
 		{
@@ -673,7 +645,7 @@ public:
 				return 0;
 			}
 			x -= dx;
-			LOG("шаг итерации Ньютона1 f df dx x ", 4, f, df, dx, x);
+//			LOG("шаг итерации Ньютона1 f # df # dx # x ", 4, f, df, dx, x);
 			if (abs(f) < epsilon)
 			{
 				return x;
@@ -752,8 +724,14 @@ public:
 
 	//TODO            typedef double (*FunctionArr[])(double);
 	//считает СНАУ методом Ньютона; ограничено число итераций: 100, но можно перегрузить в параметрах эпсилон - приближение и число итераций
-	vector<double> NewtonHardCode(const vector<double>& p0, vector<double>& x, double eps = 1e-6, int itMax = 100, int N = 8, double stepK = 1)
+	vector<double> NewtonHardCode(vector<double>& x)
 	{
+		double eps = 1e-6;			
+		int itMax = 100;
+		int N = 8;
+		double stepK = 1;
+
+		vector<double> p0 = { x[8], x[9], x[10], x[11] };
 		int iterations{ 0 };						             //ограничим число итераций: 100, но можно перегрузить в параметрах эпсилон - приближение и iter
 		int sumF{ 0 };
 
@@ -862,6 +840,8 @@ public:
 			x[9] = x[6] - x[4];
 			x[10] = x[7] - x[5];
 			x[11] = x[6] + x[7];
+
+			LOG("Итерация: # f1 # dx1", 3, (double)it, f[1], dp[1]);
 
 			for (int i = 0; i < N; i++)
 			{
@@ -1083,7 +1063,7 @@ public:
 double GetCalculationRuntime(HydraulicNet, vector<double>(HydraulicNet::* calculation)(vector<double>&), vector<double>, vector<double>*);
 
 //прототип; выполняет обработку результатов расчётов
-vector<double> Run(DataType, HydraulicNet, const vector<vector<double>>,  vector<double>, const vector<double>, bool save = true);
+vector<double> Run(DataType, Task, HydraulicNet, const vector<vector<double>>,  vector<double>, const vector<double>, bool save = true);
 
 //
 //************************************* MAIN *******************************************
@@ -1130,33 +1110,40 @@ int main()
 	b = { pInput[0], pInput[1], pInput[2], pInput[3], 0, 0, 0, 0, 0, 0, 0, 0 };
 	vector<double> x(N, 0.0);                                                                   //собираем результат в вектор x
 
-	ERROR = { 0, 0 };																			//сброс ошибок
-	ERROR2 = { {0, 0},{0,0} };																	
-
-	Run(DataType::ALL, net, a,b,x);																//ЗАПУСК НЕОБХОДИМЫХ РАСЧЕТОВ
+	Run(DataType::ALL, Task::All, net, a,b,x);																//ЗАПУСК НЕОБХОДИМЫХ РАСЧЕТОВ
 	
 	cout << endl << line << endl << "Error: " << ERROR[1];
 	return 0;
 }
 
 //выполняет обработку результатов расчётов, save - флаг сохранения в JSON файл
-vector<double> Run (DataType dataType, HydraulicNet net, const vector<vector<double>> a, vector<double> b, vector<double> x,  bool save)
+vector<double> Run (DataType dataType, Task task, HydraulicNet net, const vector<vector<double>> a, vector<double> b, vector<double> x,  bool save)
 {
 	vector<double> funcRuntime((int)(Task::MaxTask) - 1, 0);
 	bool runAll{ false };
 	cout << endl << " Преобразование исходной матрицы к виду ";
-	if (dataType == DataType::ALL)
+	if (dataType == DataType::ALL || task == Task::All)
 	{
-		dataType = DataType::CLA;	
 		runAll = true;																			//пробежимся по всему списку задач, CLA должна быть сверху switch
 	}
+
 	switch (dataType) 
 	{
-	case DataType::CLA :
-		cout << " Coordinate List, 3 вектора: \n\n";														
-		net.CLA = net.ConvertToCLA(a);
-		funcRuntime [(int)Task::GaussCLA] = GetCalculationRuntime(net, &HydraulicNet::GaussCLA, b, &x);
-		if(!runAll) 
+	case DataType::CSRAA :
+		cout << " CompressedSparseRowAdapted, 4 вектора CLA + CRSA: \n" << endl;											
+		net.CSRAA = net.ConvertToCSRAAdapted(a);
+		net.ShowCompressedMatrix(&net.CSRAA, DataType::CSRAA);
+		if (!runAll)
+			break;
+
+	case DataType::ALL :
+
+	case DataType::KNUTHRowsList :
+		cout << "список Кнута : \n" << endl;													    //список начала каждой строчки, список начала каждого столбца
+		net.ConvertToKnuthLists(a);
+		net.ShowKnuthList(net.KNUTHrows, DataType::KNUTHRowsList);
+		net.ShowKnuthList(net.KNUTHcolumns, DataType::KNUTHColumnsList);
+		if (!runAll)
 			break;
 
 	case DataType::CSRA :
@@ -1166,56 +1153,65 @@ vector<double> Run (DataType dataType, HydraulicNet net, const vector<vector<dou
 		if (!runAll)
 			break;
 
-	case DataType::CSRAA :
-		cout << " CompressedSparseRowAdapted, 4 вектора CLA + CRSA: \n" << endl;											
-		net.CSRAA = net.ConvertToCSRAAdapted(a);
-		net.ShowCompressedMatrix(&net.CSRAA, DataType::CSRAA);
-//		funcRuntime [(int)Task::GaussCSRAA] = GetCalculationRuntime(net, &HydraulicNet::GaussCRSAA, b, &x); //выводим время выполнения метода Гауса
-		net.ShowCompressedMatrix(&net.CSRAA, DataType::CSRAA);
-		if (!runAll)
+	case DataType::CLA :
+		cout << " Coordinate List, 3 вектора: \n\n";														
+		net.CLA = net.ConvertToCLA(a);
+		net.ShowCompressedMatrix(&net.CLA, DataType::CLA);
+		if(!runAll) 
 			break;
-
-	case DataType::KNUTHRowsList :
-		cout << "список Кнута : \n" << endl;													    //список начала каждой строчки, список начала каждого столбца
-		net.ConvertToKnuthLists(a);
-		net.ShowKnuthList(net.KNUTHrows, DataType::KNUTHRowsList);
-		net.ShowKnuthList(net.KNUTHcolumns, DataType::KNUTHColumnsList);
-//		funcRuntime[(int)Task::GaussKnuth] = GetCalculationRuntime(net, &HydraulicNet::GaussKnuth, b, &x);
-		if (!runAll)
-			break;
-	case DataType::MATRIX :
-		funcRuntime [(int)Task::Gauss] = GetCalculationRuntime(net, &HydraulicNet::Gauss, b, &x);	//матрица без сжатия	
 	}
 
-	if (x[0] != error) 
+	if (x[0] != error)
 	{
-		net.ShowResultX(x);
+		double z0{ 1.5 }, z{ 0 };																		//переменные для одного уравнения и метода Ньютона
+		
+		switch (task)
+		{
+		case Task::All :
+
+		case Task::GaussCLA:
+			funcRuntime[(int)Task::GaussCLA] = GetCalculationRuntime(net, &HydraulicNet::GaussCLA, b, &x);
+			cout << " Решение системы линейных уравнений методом Гаусса.\n\n";
+			net.ShowResultX(x);
+			if (!runAll)
+				break;
+
+		case Task::Gauss:
+			funcRuntime[(int)Task::Gauss] = GetCalculationRuntime(net, &HydraulicNet::Gauss, b, &x);
+			cout << " Решение системы линейных уравнений методом Гаусса.\n\n";
+			net.ShowResultX(x);
+			if (!runAll)
+				break;
+
+		case Task::Newton1 : 
+			z = net.Newton(equation1, z0);
+			cout << " Решение уравнения   x^2 + x - 6   методом Ньютона.\n";
+			cout << " Корень уравнения:   " << z << endl << endl << line;
+			if (!runAll)
+				break;
+
+		case Task::NewtonHardCode4 :
+			x[8] = b[0];																				//x в данном случае - вектор начальных значений и p0
+			x[9] = b[1];
+			x[10] = b[2];
+			x[11] = b[3];
+			funcRuntime[(int)Task::NewtonHardCode4] = GetCalculationRuntime(net, &HydraulicNet::NewtonHardCode, x, &x);
+			cout << " Решение системы нелинейных уравнений методом Ньютона.";
+			x = net.NewtonHardCode(x);
+			net.ShowResultX(x);
+		}
+
 		cout << "\n Время расчетов Гауссом с 3 векторами: " << funcRuntime[(int)Task::GaussCLA] << ", мкс.";
 		cout << "\n Время расчетов Гауссом с разреженной матрицей без сжатия: " << funcRuntime[(int)Task::Gauss] << ", мкс.";
+		cout << "\n Время расчетов Ньютоном системы уравнений: " << funcRuntime[(int)Task::NewtonHardCode4] << ", мкс.";
 		cout << endl << line << endl;
+	}
 		if (save)
 		{
 			net.WriteJSON(filenameResultJSON, x);
 		}
 
-		cout << endl << line << endl;
-		cout << " Расчет уравнения x * x + x - 6 = 0 методом Ньютона.\n\n";
-
-		double z0{1.5};
-		double z = net.Newton(equation1, z0);
-		cout << z << endl << endl << line;
-
-		vector<double> pInput = {b[0], b[1], b[2], b[3]};
-		
-		x = net.NewtonHardCode(pInput, x);
-
-		net.ShowResultX(x);
-	}
-	else
-	{
-		cout << endl << line << "\nОшибка номер: " << x[1] << ", см. enum ERROR_TYPE.\n";
-	}
-	return b;
+	return x;
 };
 
 //
