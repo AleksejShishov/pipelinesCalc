@@ -726,9 +726,8 @@ public:
 	//считает СНАУ методом Ньютона; ограничено число итераций: 100, но можно перегрузить в параметрах эпсилон - приближение и число итераций
 	vector<double> NewtonHardCode(vector<double>& x)
 	{
-		double eps = 1e-6;			
-		int itMax = 100;
-		int N = 8;
+		const double eps = 1e-6;			
+		int N =8, itMax = 100;
 		double stepK = 1;
 
 		vector<double> p0 = { x[8], x[9], x[10], x[11] };
